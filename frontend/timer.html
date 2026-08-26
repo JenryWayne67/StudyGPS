@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StudyGPS — Task Detail &amp; Timer</title>
+<link rel="stylesheet" href="timer.css">
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ---------- Task header ---------- -->
+  <header class="task-head">
+    <span class="course-tag">COURSE: C++ PROGRAMMING</span>
+    <h1 class="task-title">Recursive Functions (Section 7.2)</h1>
+    <p class="task-source">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+      </svg>
+      Source: CPP_Textbook.pdf (Pages 210–218)
+    </p>
+  </header>
+
+  <div class="split">
+
+    <!-- ================= LEFT: checklist ================= -->
+    <section class="card checklist-card">
+      <h2 class="card-title">Checklist</h2>
+
+      <ul class="checklist">
+        <li>
+          <input type="checkbox" id="chk1" checked>
+          <label for="chk1">Read section</label>
+        </li>
+        <li>
+          <input type="checkbox" id="chk2">
+          <label for="chk2">Trace Example 7.3</label>
+        </li>
+        <li>
+          <input type="checkbox" id="chk3">
+          <label for="chk3">Implement factorial</label>
+        </li>
+        <li>
+          <input type="checkbox" id="chk4">
+          <label for="chk4">Implement Fibonacci</label>
+        </li>
+      </ul>
+
+      <footer class="prereq">
+        <span class="prereq-label">Prerequisites</span>
+        <ul class="chips">
+          <li>Functions</li>
+          <li>Basic recursion</li>
+        </ul>
+      </footer>
+    </section>
+
+    <!-- ================= RIGHT: VISUAL TIMER ================= -->
+    <section class="card timer" id="timer" data-state="idle">
+
+      <!-- status badge -->
+      <p class="timer-badge">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="timerStatus">Ready to start</span>
+      </p>
+
+      <!-- ring + display -->
+      <div class="timer-dial">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-track" cx="100" cy="100" r="88" pathLength="100"></circle>
+          <circle class="ring-fill" id="timerRing" cx="100" cy="100" r="88" pathLength="100"></circle>
+        </svg>
+
+        <p class="timer-display" id="timerDisplay"
+           role="timer" aria-live="off" aria-label="Elapsed study time">
+          <span id="hh">00</span><span class="colon">:</span><span id="mm">00</span><span class="colon">:</span><span id="ss">00</span>
+        </p>
+      </div>
+
+      <!-- stats -->
+      <ul class="timer-stats">
+        <li><span class="stat-label">Started</span><span class="stat-value" id="statStarted">--:--</span></li>
+        <li><span class="stat-label">Est</span><span class="stat-value" id="statEst">45 min</span></li>
+        <li><span class="stat-label">Actual</span><span class="stat-value" id="statActual">0 min</span></li>
+      </ul>
+
+      <!-- ---------- CONTROLS ---------- -->
+      <div class="timer-controls">
+
+        <button type="button" class="btn btn-start" id="btnStart">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+            <polygon points="7 4 20 12 7 20"></polygon>
+          </svg>
+          START
+        </button>
+
+        <button type="button" class="btn btn-pause" id="btnPause">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+            <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+          </svg>
+          PAUSE
+        </button>
+
+        <button type="button" class="btn btn-resume" id="btnResume">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+            <polygon points="7 4 20 12 7 20"></polygon>
+          </svg>
+          RESUME
+        </button>
+
+        <button type="button" class="btn btn-stop" id="btnStop">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+          </svg>
+          STOP
+        </button>
+
+      </div>
+
+      <button type="button" class="btn btn-complete" id="btnComplete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"></circle><polyline points="8.5 12 11 14.5 15.5 9.5"></polyline>
+        </svg>
+        COMPLETE TASK
+      </button>
+
+      <a href="quiz.html" class="quiz-link">TAKE QUICK QUIZ →</a>
+
+    </section>
+  </div>
+</div>
+
+</body>
+</html>

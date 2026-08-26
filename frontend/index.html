@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StudyGPS — Navigate your studies with confidence</title>
+  <meta name="description" content="StudyGPS turns your syllabus, deadlines and study habits into a clear route through the semester.">
+ <link rel="stylesheet" href="style.css">
+ 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <a class="button button--secondary button--compact" href="#main" style="position:absolute;left:-9999px;">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="logo" href="/" aria-label="StudyGPS home">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+       <circle cx="12" cy="12" r="9"></circle>
+      <path d="M15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5z"></path>
+        </svg>
+        <span>StudyGPS</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <ul>
+          <li><a href="#how-it-works">How it works</a></li>
+          <li><a href="#courses">Courses</a></li>
+          <li><a href="#progress">Progress</a></li>
+        </ul>
+      </nav>
+
+      <a class="button button--secondary button--compact" href="onboarding.html">Login / Profile</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero__inner">
+        <p class="eyebrow">Academic navigation</p>
+
+        <h1 class="hero__title" id="hero-title">StudyGPS</h1>
+
+        <p class="hero__tagline">Know exactly what to study next — and why it matters.</p>
+
+        <p class="hero__lede">
+          StudyGPS turns your syllabus, deadlines, and past results into a clear route through the
+          semester. It maps every course into small, ordered milestones, then adjusts the plan as
+          your grades and available time change — so your study hours land where they count.
+        </p>
+
+        <div class="hero__actions">
+          <a class="button button--primary" href="/signup">Get Started</a>
+          <a class="button button--secondary" href="onboarding.html">Login / Profile</a>
+        </div>
+
+        <p class="hero__note">Free for students. No credit card required.</p>
+      </div>
+    </section>
+
+    <section class="features" id="how-it-works" aria-labelledby="features-title">
+      <div class="container">
+        <header class="features__heading">
+          <p class="section-label">How it works</p>
+          <h2 class="features__title" id="features-title">Three steps to a clearer semester</h2>
+        </header>
+
+        <div class="card-grid">
+          <article class="card">
+            <p class="card__tag">Step 01</p>
+            <h3 class="card__title">Map your courses</h3>
+            <p class="card__body">
+              Add your subjects, assessment weights, and due dates. StudyGPS builds a structured
+              map of everything the semester expects from you.
+            </p>
+            <p class="card__meta">Setup takes about 5 minutes</p>
+            <p class="progress" role="presentation"><span class="progress__indicator" style="width: 33%;"></span></p>
+          </article>
+
+          <article class="card">
+            <p class="card__tag">Step 02</p>
+            <h3 class="card__title">Follow your route</h3>
+            <p class="card__body">
+              Each day you get a short, prioritised list of study units — ordered by deadline
+              pressure, subject weight, and how well you have retained the material.
+            </p>
+            <p class="card__meta">Recalculated every morning</p>
+            <p class="progress" role="presentation"><span class="progress__indicator" style="width: 66%;"></span></p>
+          </article>
+
+          <article class="card">
+            <p class="card__tag">Step 03</p>
+            <h3 class="card__title">Track real progress</h3>
+            <p class="card__body">
+              Completion, coverage, and grade trends stay visible in one place, so you can see
+              which subjects are on course and which need a detour.
+            </p>
+            <p class="card__meta">Updated after every session</p>
+            <p class="progress" role="presentation"><span class="progress__indicator" style="width: 100%;"></span></p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <p>&copy; 2026 StudyGPS. Built for students and educators.</p>
+      <nav aria-label="Footer">
+        <ul>
+          <li><a href="/about">About</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/support">Support</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
