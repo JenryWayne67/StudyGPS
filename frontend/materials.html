@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyGPS — Study Materials & PDF Ingestion</title>
+  <link rel="stylesheet" href="common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
+
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="app-sidebar">
+      <a href="dashboard.html" class="brand-header">
+        <div class="brand-logo">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">StudyGPS</span>
+          <span class="brand-subtitle">Academic OS</span>
+        </div>
+      </a>
+
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          Dashboard
+        </a>
+        <a href="materials.html" class="nav-link active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path><path d="M6 10h10"></path>
+          </svg>
+          Materials
+        </a>
+        <a href="tasks.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          Tasks & Timer
+        </a>
+        <a href="schedule.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Schedule
+        </a>
+        <a href="progress.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          Progress
+        </a>
+      </nav>
+
+      <div class="sidebar-user">
+        <div class="user-badge">
+          <span class="user-avatar">AJ</span>
+          <div class="user-details">
+            <span class="user-name">Alex Johnson</span>
+            <span class="user-role">Computer Science</span>
+          </div>
+        </div>
+        <a href="/api/auth/logout" title="Logout" class="text-slate-400 hover:text-red-600 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </a>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="app-main">
+      <div class="mb-6">
+        <h1 class="page-title">Materials</h1>
+        <p class="text-sm text-slate-500 font-medium">Upload lecture slides, textbooks, and syllabi to extract structured study sections.</p>
+      </div>
+
+      <!-- Course Selector & Add Course Action -->
+      <div class="mb-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">My Courses</label>
+            <p class="text-xs text-slate-400 font-medium">Select an active course or add new courses to organize your study materials.</p>
+          </div>
+          <button type="button" onclick="openAddCourseModal()" class="btn btn-primary btn-sm whitespace-nowrap flex items-center gap-1.5 shadow-sm">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add New Course
+          </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+          <div class="flex-grow max-w-md">
+            <select id="courseSelect" onchange="loadCourseMaterials()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+              <!-- Populated dynamically via renderCourseOptions -->
+            </select>
+          </div>
+          
+          <!-- Course quick chips / count -->
+          <div id="courseChipsList" class="flex flex-wrap items-center gap-2">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- BEFORE & AFTER SECTION CONTAINER -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <!-- Upload & List Column (7 cols) -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <!-- Dropzone Container -->
+          <div>
+            <h2 class="text-sm font-bold text-slate-900 mb-2">Upload Study Material</h2>
+            <div id="dropZone" class="border-2 border-dashed border-slate-200 hover:border-blue-500 bg-white rounded-2xl p-8 text-center transition cursor-pointer group shadow-sm">
+              <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(event)">
+              <div class="w-12 h-12 rounded-2xl bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-3 transition">
+                <span class="text-2xl">📄</span>
+              </div>
+              <p class="text-sm font-bold text-slate-800">Drop PDF here</p>
+              <p class="text-xs text-slate-400 my-1">or</p>
+              <button type="button" onclick="document.getElementById('pdfFileInput').click()" class="btn btn-secondary btn-sm">
+                Choose PDF
+              </button>
+              <p class="text-[11px] text-slate-400 mt-3 font-medium">Supports Syllabi, Lecture Slides, & Chapters (.pdf up to 50MB)</p>
+            </div>
+          </div>
+
+          <!-- Uploaded Materials List -->
+          <div>
+            <h2 class="text-sm font-bold text-slate-900 mb-2">Uploaded Materials</h2>
+            <div class="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 shadow-sm" id="materialsList">
+              <!-- Material Items dynamically populated -->
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Analysis Results Column (5 cols) -->
+        <div class="lg:col-span-5">
+          <div id="analysisPanel" class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-6">
+            <div class="flex items-center gap-2 text-emerald-600 font-bold text-xs mb-3">
+              <span>✓</span>
+              <span>Analysis Complete</span>
+            </div>
+
+            <div class="flex items-center gap-2 pb-4 mb-4 border-b border-slate-100">
+              <span class="text-xl">📄</span>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900" id="analyzedDocTitle">Discrete Mathematics.pdf</h3>
+                <span class="text-[11px] text-slate-400 font-medium">48 pages • 3 sections parsed</span>
+              </div>
+            </div>
+
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Detected Sections</h4>
+            
+            <div class="space-y-2.5 mb-6" id="detectedSectionsContainer">
+              <!-- Section 1 -->
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-xs font-bold text-slate-800">Propositions</h5>
+                  <span class="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded">Diff 1</span>
+                </div>
+                <p class="text-[11px] text-slate-500 font-medium">Pages 3–6 • 40 min</p>
+              </div>
+
+              <!-- Section 2 -->
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-xs font-bold text-slate-800">Logical Operators</h5>
+                  <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Diff 2</span>
+                </div>
+                <p class="text-[11px] text-slate-500 font-medium">Pages 7–10 • 50 min</p>
+              </div>
+
+              <!-- Section 3 -->
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-xs font-bold text-slate-800">Truth Tables</h5>
+                  <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Diff 2</span>
+                </div>
+                <p class="text-[11px] text-slate-500 font-medium">Pages 11–15 • 60 min</p>
+              </div>
+            </div>
+
+            <button type="button" onclick="generateTasks()" id="btnGenTasks" class="w-full btn btn-primary flex items-center justify-center gap-2">
+              Generate Tasks &rarr;
+            </button>
+            <p class="text-[11px] text-center text-slate-400 mt-2 font-medium">Creates structured tasks and calculates priorities in C++ engine</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- MOBILE BOTTOM NAVIGATION -->
+  <nav class="mobile-nav-bar" aria-label="Mobile Navigation">
+    <a href="dashboard.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+    <a href="materials.html" class="mobile-nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+        <path d="M6 6h10"></path><path d="M6 10h10"></path>
+      </svg>
+      <span>Materials</span>
+    </a>
+    <a href="tasks.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Tasks</span>
+    </a>
+    <a href="schedule.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+      <span>Schedule</span>
+    </a>
+    <a href="progress.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <span>Progress</span>
+    </a>
+  </nav>
+
+  <!-- ADD COURSE MODAL -->
+  <div id="addCourseModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">
+            📚
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Add New Course</h3>
+            <p class="text-xs text-slate-400">Expand your academic flight plan</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeAddCourseModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- Form Inputs -->
+      <form id="addCourseForm" onsubmit="handleCreateCourse(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Name *</label>
+          <input type="text" id="newCourseName" required placeholder="e.g. Data Structures & Algorithms" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Code</label>
+            <input type="text" id="newCourseCode" placeholder="e.g. CS210" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Color</label>
+            <select id="newCourseColor" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="#2563eb" selected>🔵 Blue</option>
+              <option value="#10b981">🟢 Green</option>
+              <option value="#8b5cf6">🟣 Purple</option>
+              <option value="#f59e0b">🟡 Amber</option>
+              <option value="#ec4899">🌸 Rose</option>
+              <option value="#06b6d4">🌊 Cyan</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Icon</label>
+          <div class="grid grid-cols-6 gap-2">
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="💻" checked class="sr-only">
+              <span class="text-base">💻</span>
+            </label>
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="📐" class="sr-only">
+              <span class="text-base">📐</span>
+            </label>
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="🌐" class="sr-only">
+              <span class="text-base">🌐</span>
+            </label>
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="🔬" class="sr-only">
+              <span class="text-base">🔬</span>
+            </label>
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="📊" class="sr-only">
+              <span class="text-base">📊</span>
+            </label>
+            <label class="flex items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 transition">
+              <input type="radio" name="course_icon" value="📖" class="sr-only">
+              <span class="text-base">📖</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="pt-3 flex items-center justify-end gap-2.5">
+          <button type="button" onclick="closeAddCourseModal()" class="btn btn-secondary btn-sm">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm">
+            <span>+</span> Create Course
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <script src="app-store.js"></script>
+  <script>
+    let currentSelectedMaterialId = 1;
+
+    function renderCourseOptions(selectCourseId = null) {
+      const courses = StudyGPS.getCourses();
+      const select = document.getElementById('courseSelect');
+      const chipsContainer = document.getElementById('courseChipsList');
+      
+      const currentVal = selectCourseId || select.value || (courses.length > 0 ? courses[0].id : 1);
+
+      // Populate select dropdown
+      select.innerHTML = courses.map(c => `
+        <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
+          ${c.icon || '📘'} ${c.name} (${c.code || 'Course'})
+        </option>
+      `).join('');
+
+      // Populate quick course chips
+      if (chipsContainer) {
+        chipsContainer.innerHTML = courses.map(c => `
+          <button type="button" onclick="switchCourse(${c.id})" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${String(c.id) === String(currentVal) ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'}">
+            <span>${c.icon || '📘'}</span>
+            <span>${c.name}</span>
+          </button>
+        `).join('');
+      }
+
+      loadCourseMaterials();
+    }
+
+    function switchCourse(courseId) {
+      document.getElementById('courseSelect').value = courseId;
+      renderCourseOptions(courseId);
+    }
+
+    function openAddCourseModal() {
+      document.getElementById('addCourseModal').classList.remove('hidden');
+      document.getElementById('newCourseName').focus();
+    }
+
+    function closeAddCourseModal() {
+      document.getElementById('addCourseModal').classList.add('hidden');
+      document.getElementById('addCourseForm').reset();
+    }
+
+    function handleCreateCourse(e) {
+      e.preventDefault();
+      const name = document.getElementById('newCourseName').value.trim();
+      const code = document.getElementById('newCourseCode').value.trim();
+      const color = document.getElementById('newCourseColor').value;
+      const iconInput = document.querySelector('input[name="course_icon"]:checked');
+      const icon = iconInput ? iconInput.value : '📘';
+
+      if (!name) return;
+
+      const newCourse = StudyGPS.addCourse(name, code, color, icon);
+      closeAddCourseModal();
+      
+      // Re-render course selector with the new course actively selected
+      renderCourseOptions(newCourse.id);
+    }
+
+    function loadCourseMaterials() {
+      const courseId = document.getElementById('courseSelect').value;
+      const materials = StudyGPS.getMaterials(courseId);
+      const container = document.getElementById('materialsList');
+
+      if (materials.length === 0) {
+        container.innerHTML = `
+          <div class="p-8 text-center space-y-2">
+            <span class="text-3xl block">📂</span>
+            <p class="text-xs font-bold text-slate-600">No PDFs uploaded for this course yet.</p>
+            <p class="text-[11px] text-slate-400 font-medium">Use the upload box above to ingest lecture notes, textbooks, or syllabus files.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = materials.map(mat => `
+        <div class="p-4 flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">📄</span>
+            <div>
+              <h4 class="text-xs font-bold text-slate-800">${mat.filename}</h4>
+              <p class="text-[11px] text-slate-400 font-medium">${mat.file_size} • ${mat.page_count} pages</p>
+            </div>
+          </div>
+          <button onclick="triggerAnalyze(${mat.id})" class="btn btn-secondary btn-sm">
+            Analyze
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function triggerAnalyze(materialId) {
+      currentSelectedMaterialId = materialId;
+      const sections = StudyGPS.analyzeMaterial(materialId);
+      const materials = StudyGPS.getMaterials();
+      const mat = materials.find(m => m.id === materialId) || materials[0];
+
+      document.getElementById('analyzedDocTitle').textContent = mat ? mat.filename : 'Discrete Mathematics.pdf';
+      
+      const secContainer = document.getElementById('detectedSectionsContainer');
+      secContainer.innerHTML = sections.map(sec => `
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+          <div class="flex items-center justify-between">
+            <h5 class="text-xs font-bold text-slate-800">${sec.title}</h5>
+            <span class="text-[10px] font-bold ${sec.difficulty >= 2 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'} px-2 py-0.5 rounded">Diff ${sec.difficulty}</span>
+          </div>
+          <p class="text-[11px] text-slate-500 font-medium">Pages ${sec.start_page}–${sec.end_page} • ${sec.estimated_minutes} min</p>
+        </div>
+      `).join('');
+
+      document.getElementById('analysisPanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const courseId = document.getElementById('courseSelect').value;
+      const sizeStr = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+      
+      const newMat = StudyGPS.uploadMaterial(courseId, file.name, sizeStr);
+      loadCourseMaterials();
+      triggerAnalyze(newMat.id);
+    }
+
+    function generateTasks() {
+      StudyGPS.generateTasksFromMaterial(currentSelectedMaterialId);
+      window.location.href = 'tasks.html';
+    }
+
+    // Drag and drop handlers
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-blue-500', 'bg-blue-50/20');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-blue-500', 'bg-blue-50/20');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-blue-500', 'bg-blue-50/20');
+      if (e.dataTransfer.files.length) {
+        handleFileUpload({ target: { files: e.dataTransfer.files } });
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderCourseOptions();
+    });
+  </script>
+</body>
+</html>

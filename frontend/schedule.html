@@ -1,594 +1,300 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StudyGPS — Schedule</title>
-<link rel="stylesheet" href="schedule.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyGPS — My Schedule</title>
+  <link rel="stylesheet" href="common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
-<!--
-  ============================================================================
-  SCHEDULE — daily + weekly views.
-
-  The Day / Week switch is pure HTML+CSS: two hidden radio inputs
-  (#viewDay / #viewWeek) sit before the panels, and CSS sibling selectors
-  show one panel at a time. No JavaScript anywhere on this page.
-
-  BLOCK TYPES (visual distinction):
-      .block.study    blue    — a study session
-      .block.break    amber   — a rest gap
-      .block.review   green   — revision / recall of earlier material
-  ============================================================================
--->
-
-<div class="layout">
-
-  <!-- ================= SIDEBAR ================= -->
-  <aside class="sidebar">
-    <div class="brand">
-      <span class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5z"></path>
-        </svg>
-      </span>
-      <span class="brand-text">
-        <strong>StudyGPS</strong>
-        <small>Academic OS</small>
-      </span>
-    </div>
-
-    <a href="#" class="btn-new">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-      New Study Session
-    </a>
-
-    <nav class="nav">
-      <a href="dashboard.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
-          <rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect>
-        </svg>
-        Dashboard
-      </a>
-      <a href="course-library.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-        </svg>
-        Course Library
-      </a>
-      <a href="route.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="6" cy="19" r="3"></circle><circle cx="18" cy="5" r="3"></circle>
-          <path d="M9 19h4a4 4 0 0 0 4-4V9"></path>
-        </svg>
-        Study Route
-      </a>
-      <a href="tasks.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle><polyline points="8.5 12 11 14.5 15.5 9.5"></polyline>
-        </svg>
-        Tasks
-      </a>
-      <a href="quiz.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="4" y="3" width="16" height="18" rx="2"></rect>
-          <line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line>
-          <line x1="8" y1="16" x2="12" y2="16"></line>
-        </svg>
-        Quiz History
-      </a>
-      <a href="progress.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline>
-        </svg>
-        Progress
-      </a>
-      <a href="reports.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line>
-        </svg>
-        Reports
-      </a>
-      <a href="#" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>
-        </svg>
-        Profile
-      </a>
-    </nav>
-  </aside>
-
-  <!-- ================= MAIN ================= -->
-  <main class="main">
-
-    <!-- ---------- Page head ---------- -->
-    <header class="page-head">
-      <div>
-        <h1 class="page-title">Schedule</h1>
-        <p class="page-sub">Your planned study route for the day and the week ahead.</p>
-      </div>
-
-      <div class="date-nav">
-        <span class="nav-btn" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 6 9 12 15 18"></polyline>
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="app-sidebar">
+      <a href="dashboard.html" class="brand-header">
+        <div class="brand-logo">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
           </svg>
-        </span>
-        <span class="date-pill">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">StudyGPS</span>
+          <span class="brand-subtitle">Academic OS</span>
+        </div>
+      </a>
+
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          Dashboard
+        </a>
+        <a href="materials.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path><path d="M6 10h10"></path>
+          </svg>
+          Materials
+        </a>
+        <a href="tasks.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          Tasks & Timer
+        </a>
+        <a href="schedule.html" class="nav-link active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
             <line x1="3" y1="10" x2="21" y2="10"></line>
-            <line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line>
           </svg>
-          <b>Monday, 20 October 2026</b>
-        </span>
-        <span class="nav-btn" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 6 15 12 9 18"></polyline>
+          Schedule
+        </a>
+        <a href="progress.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-        </span>
-        <a href="#" class="today-btn">Today</a>
-      </div>
-    </header>
+          Progress
+        </a>
+      </nav>
 
-    <!-- ---------- Summary ---------- -->
-    <section class="summary">
-      <article class="sum study">
-        <span class="sum-label">Study</span>
-        <span class="sum-value">4h 20m</span>
-        <span class="sum-note">5 sessions</span>
-      </article>
-      <article class="sum break">
-        <span class="sum-label">Break</span>
-        <span class="sum-value">50m</span>
-        <span class="sum-note">3 gaps</span>
-      </article>
-      <article class="sum review">
-        <span class="sum-label">Review</span>
-        <span class="sum-value">55m</span>
-        <span class="sum-note">2 sessions</span>
-      </article>
-      <article class="sum total">
-        <span class="sum-label">Scheduled</span>
-        <span class="sum-value">6h 05m</span>
-        <span class="sum-note">08:00 – 21:00</span>
-      </article>
-    </section>
-
-    <!-- ==================================================================
-         DAY / WEEK SWITCH  — pure CSS, no scripts
-         ================================================================== -->
-    <section class="switcher">
-      <input type="radio" name="view" id="viewDay" checked>
-      <input type="radio" name="view" id="viewWeek">
-
-      <div class="toolbar">
-        <div class="seg">
-          <label for="viewDay">Daily</label>
-          <label for="viewWeek">Weekly</label>
+      <div class="sidebar-user">
+        <div class="user-badge">
+          <span class="user-avatar" id="avatarLetter">AJ</span>
+          <div class="user-details">
+            <span class="user-name" id="userName">Alex Johnson</span>
+            <span class="user-role">Computer Science</span>
+          </div>
         </div>
-
-        <ul class="legend">
-          <li><span class="key study"></span>Study</li>
-          <li><span class="key break"></span>Break</li>
-          <li><span class="key review"></span>Review</li>
-        </ul>
+        <a href="/api/auth/logout" title="Logout" class="text-slate-400 hover:text-red-600 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </a>
       </div>
+    </aside>
 
-      <div class="views">
+    <!-- MAIN CONTENT -->
+    <main class="app-main max-w-5xl">
+      
+      <!-- WEEKLY SCHEDULE CARD -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+        
+        <!-- Header Bar: Title & Week Navigation -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div>
+            <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">My Weekly Schedule</h1>
+            <p class="text-xs text-slate-500 font-medium mt-0.5">Algorithmically optimized flight plan across all courses</p>
+          </div>
 
-        <!-- ============================================================
-             DAILY VIEW
-             ============================================================ -->
-        <div class="view view-day">
-
-          <!-- column headings -->
-          <header class="row-head">
-            <span class="col-time">Time</span>
-            <span class="col-body">Course · Topic · Task</span>
-            <span class="col-dur">Duration</span>
-            <span class="col-prio">Priority</span>
-            <span class="col-status">Status</span>
-          </header>
-
-          <ul class="day-list">
-
-            <!-- 1 — study, done -->
-            <li class="block study is-done">
-              <div class="time">
-                <b>08:00</b><span class="dash">–</span><b>08:45</b>
-                <span class="type-tag study">Study</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">Discrete Mathematics</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Recursion</span>
-                </p>
-                <p class="task">Read Chapter 3, Section 3.1 (Pages 145–151)</p>
-              </div>
-              <div class="dur">45m</div>
-              <div class="prio"><span class="pill high">High</span></div>
-              <div class="status"><span class="pill done">Completed</span></div>
-            </li>
-
-            <!-- 2 — break -->
-            <li class="block break">
-              <div class="time">
-                <b>08:45</b><span class="dash">–</span><b>09:00</b>
-                <span class="type-tag break">Break</span>
-              </div>
-              <div class="body">
-                <p class="line-1"><span class="course muted">Rest</span></p>
-                <p class="task muted">Step away from the screen. Water and a short walk.</p>
-              </div>
-              <div class="dur">15m</div>
-              <div class="prio"><span class="pill none">—</span></div>
-              <div class="status"><span class="pill done">Completed</span></div>
-            </li>
-
-            <!-- 3 — study, in progress -->
-            <li class="block study is-now">
-              <div class="time">
-                <b>09:00</b><span class="dash">–</span><b>09:40</b>
-                <span class="type-tag study">Study</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">C++ Programming</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Recursive Functions</span>
-                </p>
-                <p class="task">Section 7.2 — trace Example 7.3, implement factorial</p>
-              </div>
-              <div class="dur">40m</div>
-              <div class="prio"><span class="pill high">High</span></div>
-              <div class="status"><span class="pill now">In Progress</span></div>
-            </li>
-
-            <!-- 4 — review -->
-            <li class="block review">
-              <div class="time">
-                <b>09:40</b><span class="dash">–</span><b>10:05</b>
-                <span class="type-tag review">Review</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">Discrete Mathematics</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Set Theory</span>
-                </p>
-                <p class="task">Recall drill — flashcards from last week's quiz misses</p>
-              </div>
-              <div class="dur">25m</div>
-              <div class="prio"><span class="pill medium">Medium</span></div>
-              <div class="status"><span class="pill next">Up Next</span></div>
-            </li>
-
-            <!-- 5 — break -->
-            <li class="block break">
-              <div class="time">
-                <b>10:05</b><span class="dash">–</span><b>10:25</b>
-                <span class="type-tag break">Break</span>
-              </div>
-              <div class="body">
-                <p class="line-1"><span class="course muted">Rest</span></p>
-                <p class="task muted">Long break — snack and reset before the practice block.</p>
-              </div>
-              <div class="dur">20m</div>
-              <div class="prio"><span class="pill none">—</span></div>
-              <div class="status"><span class="pill planned">Planned</span></div>
-            </li>
-
-            <!-- 6 — study -->
-            <li class="block study">
-              <div class="time">
-                <b>10:25</b><span class="dash">–</span><b>11:25</b>
-                <span class="type-tag study">Study</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">Data Structures</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Binary Trees</span>
-                </p>
-                <p class="task">Chapter 4, Section 4.2 — implement in-order traversal</p>
-              </div>
-              <div class="dur">1h 00m</div>
-              <div class="prio"><span class="pill medium">Medium</span></div>
-              <div class="status"><span class="pill planned">Planned</span></div>
-            </li>
-
-            <!-- 7 — study -->
-            <li class="block study">
-              <div class="time">
-                <b>14:00</b><span class="dash">–</span><b>15:15</b>
-                <span class="type-tag study">Study</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">Modern History</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Post-War Europe</span>
-                </p>
-                <p class="task">Draft essay introduction and thesis statement</p>
-              </div>
-              <div class="dur">1h 15m</div>
-              <div class="prio"><span class="pill medium">Medium</span></div>
-              <div class="status"><span class="pill planned">Planned</span></div>
-            </li>
-
-            <!-- 8 — break -->
-            <li class="block break">
-              <div class="time">
-                <b>15:15</b><span class="dash">–</span><b>15:30</b>
-                <span class="type-tag break">Break</span>
-              </div>
-              <div class="body">
-                <p class="line-1"><span class="course muted">Rest</span></p>
-                <p class="task muted">Short break before the evening review.</p>
-              </div>
-              <div class="dur">15m</div>
-              <div class="prio"><span class="pill none">—</span></div>
-              <div class="status"><span class="pill planned">Planned</span></div>
-            </li>
-
-            <!-- 9 — review -->
-            <li class="block review">
-              <div class="time">
-                <b>19:30</b><span class="dash">–</span><b>20:00</b>
-                <span class="type-tag review">Review</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">C++ Programming</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Pointers</span>
-                </p>
-                <p class="task">Weak-area drill — 10 questions on pointer arithmetic</p>
-              </div>
-              <div class="dur">30m</div>
-              <div class="prio"><span class="pill high">High</span></div>
-              <div class="status"><span class="pill planned">Planned</span></div>
-            </li>
-
-            <!-- 10 — study, missed -->
-            <li class="block study is-missed">
-              <div class="time">
-                <b>20:00</b><span class="dash">–</span><b>20:20</b>
-                <span class="type-tag study">Study</span>
-              </div>
-              <div class="body">
-                <p class="line-1">
-                  <span class="course">Spanish 101</span>
-                  <span class="sep">·</span>
-                  <span class="topic">Vocabulary</span>
-                </p>
-                <p class="task">Unit 5 flashcards — 40 new words</p>
-              </div>
-              <div class="dur">20m</div>
-              <div class="prio"><span class="pill low">Low</span></div>
-              <div class="status"><span class="pill missed">Missed</span></div>
-            </li>
-
-          </ul>
-        </div>
-
-        <!-- ============================================================
-             WEEKLY VIEW
-             ============================================================ -->
-        <div class="view view-week">
-
-          <div class="week-scroll">
-            <div class="week-grid">
-
-              <!-- MON -->
-              <section class="day-col is-today">
-                <header class="day-head">
-                  <span class="dow">Mon</span><span class="dnum">20</span>
-                  <span class="day-total">6h 05m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock study">
-                    <span class="wtime">08:00–08:45</span>
-                    <strong>Discrete Math</strong>
-                    <span class="wtopic">Recursion · Sec 3.1</span>
-                    <span class="wfoot"><i class="pill high">High</i><i class="pill done">Done</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">08:45–09:00</span><strong>Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">09:00–09:40</span>
-                    <strong>C++ Programming</strong>
-                    <span class="wtopic">Recursive Functions</span>
-                    <span class="wfoot"><i class="pill high">High</i><i class="pill now">Now</i></span>
-                  </li>
-                  <li class="wblock review">
-                    <span class="wtime">09:40–10:05</span>
-                    <strong>Discrete Math</strong>
-                    <span class="wtopic">Set Theory recall</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                  <li class="wblock study">
-                    <span class="wtime">10:25–11:25</span>
-                    <strong>Data Structures</strong>
-                    <span class="wtopic">Binary Trees</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                  <li class="wblock review">
-                    <span class="wtime">19:30–20:00</span>
-                    <strong>C++ Programming</strong>
-                    <span class="wtopic">Pointers drill</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- TUE -->
-              <section class="day-col">
-                <header class="day-head">
-                  <span class="dow">Tue</span><span class="dnum">21</span>
-                  <span class="day-total">4h 30m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock study">
-                    <span class="wtime">09:00–10:30</span>
-                    <strong>Modern History</strong>
-                    <span class="wtopic">Essay draft</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">10:30–10:45</span><strong>Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">10:45–12:00</span>
-                    <strong>Data Structures</strong>
-                    <span class="wtopic">Tree traversals</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                  <li class="wblock review">
-                    <span class="wtime">18:00–18:45</span>
-                    <strong>Spanish 101</strong>
-                    <span class="wtopic">Unit 4 recall</span>
-                    <span class="wfoot"><i class="pill low">Low</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- WED -->
-              <section class="day-col">
-                <header class="day-head">
-                  <span class="dow">Wed</span><span class="dnum">22</span>
-                  <span class="day-total">5h 15m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock study">
-                    <span class="wtime">08:30–10:00</span>
-                    <strong>C++ Programming</strong>
-                    <span class="wtopic">Pointers &amp; memory</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">10:00–10:20</span><strong>Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">10:20–12:00</span>
-                    <strong>Discrete Math</strong>
-                    <span class="wtopic">Graph Theory · Sec 5.1</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                  <li class="wblock review">
-                    <span class="wtime">20:00–20:30</span>
-                    <strong>Data Structures</strong>
-                    <span class="wtopic">Flashcards</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- THU -->
-              <section class="day-col">
-                <header class="day-head">
-                  <span class="dow">Thu</span><span class="dnum">23</span>
-                  <span class="day-total">3h 45m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock study">
-                    <span class="wtime">13:00–14:30</span>
-                    <strong>Modern History</strong>
-                    <span class="wtopic">Sources &amp; citations</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">14:30–14:45</span><strong>Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">14:45–16:00</span>
-                    <strong>Discrete Math</strong>
-                    <span class="wtopic">Combinatorics · Sec 4.2</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- FRI -->
-              <section class="day-col">
-                <header class="day-head">
-                  <span class="dow">Fri</span><span class="dnum">24</span>
-                  <span class="day-total">4h 00m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock review">
-                    <span class="wtime">09:00–10:00</span>
-                    <strong>All Courses</strong>
-                    <span class="wtopic">Weekly recap</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">10:00–10:15</span><strong>Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">10:15–12:00</span>
-                    <strong>C++ Programming</strong>
-                    <span class="wtopic">Practice set 3</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                  <li class="wblock study">
-                    <span class="wtime">16:00–17:15</span>
-                    <strong>Spanish 101</strong>
-                    <span class="wtopic">Listening practice</span>
-                    <span class="wfoot"><i class="pill low">Low</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- SAT -->
-              <section class="day-col">
-                <header class="day-head">
-                  <span class="dow">Sat</span><span class="dnum">25</span>
-                  <span class="day-total">2h 30m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock review">
-                    <span class="wtime">11:00–12:00</span>
-                    <strong>Discrete Math</strong>
-                    <span class="wtopic">Past paper review</span>
-                    <span class="wfoot"><i class="pill medium">Med</i></span>
-                  </li>
-                  <li class="wblock break"><span class="wtime">12:00–12:30</span><strong>Long Break</strong></li>
-                  <li class="wblock study">
-                    <span class="wtime">12:30–14:00</span>
-                    <strong>Data Structures</strong>
-                    <span class="wtopic">Project Alpha</span>
-                    <span class="wfoot"><i class="pill high">High</i></span>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- SUN -->
-              <section class="day-col is-rest">
-                <header class="day-head">
-                  <span class="dow">Sun</span><span class="dnum">26</span>
-                  <span class="day-total">1h 00m</span>
-                </header>
-                <ul class="day-blocks">
-                  <li class="wblock review">
-                    <span class="wtime">18:00–19:00</span>
-                    <strong>All Courses</strong>
-                    <span class="wtopic">Plan next week</span>
-                    <span class="wfoot"><i class="pill low">Low</i></span>
-                  </li>
-                  <li class="wblock break rest"><span class="wtime">All day</span><strong>Rest Day</strong></li>
-                </ul>
-              </section>
-
-            </div>
+          <!-- Week Switcher: ← Aug 24 – Aug 30 → -->
+          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1.5 self-start sm:self-auto">
+            <button onclick="changeWeek(-1)" title="Previous Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold">
+              ←
+            </button>
+            <span class="text-xs sm:text-sm font-bold text-slate-800 px-3 select-none min-w-[130px] text-center" id="weekRangeLabel">
+              Aug 24 – Aug 30
+            </span>
+            <button onclick="changeWeek(1)" title="Next Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold">
+              →
+            </button>
+            <button onclick="resetToCurrentWeek()" class="text-[11px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition ml-1">
+              Current
+            </button>
           </div>
         </div>
 
-      </div>
-    </section>
-  </main>
-</div>
+        <!-- 5-DAY WEEKLY GRID: MON | TUE | WED | THU | FRI -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4" id="weeklyGridContainer">
+          <!-- Dynamically populated day columns -->
+        </div>
 
+        <!-- BOTTOM ACTION: [ ⚡ Regenerate Week ] -->
+        <div class="pt-6 border-t border-slate-100 text-center space-y-2">
+          <div>
+            <button onclick="handleRegenerateWeek()" id="regenerateBtn" class="btn btn-primary btn-lg shadow-sm hover:shadow-md transition inline-flex items-center gap-2 text-sm font-bold px-6 py-3">
+              <span>⚡</span> Regenerate Week
+            </button>
+          </div>
+          <p class="text-xs text-slate-400 font-medium">Recalculated with scheduler.cpp based on deadlines, priorities & user preferences</p>
+        </div>
+
+      </div>
+
+      <!-- Quick Session Legend & Preferences Note -->
+      <div class="mt-6 flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-slate-200 text-xs text-slate-600">
+        <div class="flex items-center gap-4 flex-wrap">
+          <span class="font-bold text-slate-700">Course Colors:</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Discrete Math</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> C++ Programming</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Networking</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Review</span>
+        </div>
+        <a href="tasks.html" class="font-bold text-blue-600 hover:underline flex items-center gap-1">
+          Open Focus Timer Workbench &rarr;
+        </a>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MOBILE BOTTOM NAVIGATION -->
+  <nav class="mobile-nav-bar" aria-label="Mobile Navigation">
+    <a href="dashboard.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+    <a href="materials.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+        <path d="M6 6h10"></path><path d="M6 10h10"></path>
+      </svg>
+      <span>Materials</span>
+    </a>
+    <a href="tasks.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Tasks</span>
+    </a>
+    <a href="schedule.html" class="mobile-nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+      <span>Schedule</span>
+    </a>
+    <a href="progress.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <span>Progress</span>
+    </a>
+  </nav>
+
+  <script src="app-store.js"></script>
+  <script>
+    let currentWeekOffset = 0;
+
+    function changeWeek(delta) {
+      currentWeekOffset += delta;
+      renderWeeklyView();
+    }
+
+    function resetToCurrentWeek() {
+      currentWeekOffset = 0;
+      renderWeeklyView();
+    }
+
+    function handleRegenerateWeek() {
+      const btn = document.getElementById('regenerateBtn');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<span>⏳</span> Regenerating...`;
+      btn.disabled = true;
+
+      setTimeout(() => {
+        StudyGPS.generateWeeklySchedule(currentWeekOffset);
+        renderWeeklyView();
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }, 350);
+    }
+
+    function renderWeeklyView() {
+      const scheduleData = StudyGPS.getWeeklySchedule(currentWeekOffset);
+      if (!scheduleData) return;
+
+      document.getElementById('weekRangeLabel').textContent = scheduleData.weekLabel || 'Aug 24 – Aug 30';
+
+      const gridContainer = document.getElementById('weeklyGridContainer');
+      gridContainer.innerHTML = scheduleData.days.map(day => {
+        const isToday = day.isToday;
+        
+        return `
+          <div class="flex flex-col bg-slate-50/70 border ${isToday ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/20' : 'border-slate-200'} rounded-2xl p-3.5 space-y-4">
+            
+            <!-- Day Column Header -->
+            <div class="text-center pb-2 border-b ${isToday ? 'border-blue-200' : 'border-slate-200/80'}">
+              <div class="flex items-center justify-center gap-1.5">
+                <span class="font-extrabold text-sm tracking-wider ${isToday ? 'text-blue-700' : 'text-slate-800'}">${day.dayName}</span>
+                ${isToday ? '<span class="text-[9px] font-bold bg-blue-600 text-white px-1.5 py-0.2 rounded-full">TODAY</span>' : ''}
+              </div>
+              <span class="text-[11px] font-semibold text-slate-400 block">${day.dateStr}</span>
+            </div>
+
+            <!-- Stacked Time Slots -->
+            <div class="space-y-3 flex-grow flex flex-col justify-start">
+              ${day.slots.map(slot => {
+                if (slot.isFree || slot.title === '─────') {
+                  return `
+                    <div class="space-y-1 text-center py-2">
+                      <span class="font-mono text-xs font-bold text-slate-400 block">${slot.time}</span>
+                      <div class="p-3 rounded-xl border border-dashed border-slate-200 bg-white/60 text-slate-400 text-xs font-mono font-medium flex items-center justify-center min-h-[72px]">
+                        ─────
+                      </div>
+                    </div>
+                  `;
+                }
+
+                // Color accent styling
+                let borderClass = 'border-slate-200 hover:border-blue-300';
+                let tagClass = 'bg-blue-50 text-blue-700';
+                let timeColor = 'text-slate-600';
+
+                if (slot.color === 'emerald') {
+                  tagClass = 'bg-emerald-50 text-emerald-700';
+                } else if (slot.color === 'amber') {
+                  tagClass = 'bg-amber-50 text-amber-700';
+                } else if (slot.color === 'indigo' || slot.color === 'violet') {
+                  tagClass = 'bg-indigo-50 text-indigo-700';
+                }
+
+                return `
+                  <div class="space-y-1">
+                    <span class="font-mono text-xs font-bold ${timeColor} block pl-1">${slot.time}</span>
+                    <a href="tasks.html${slot.task_id ? '?task_id=' + slot.task_id : ''}" class="block p-3 rounded-xl bg-white border ${borderClass} shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between">
+                      <div>
+                        <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${slot.title}</h4>
+                        <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1">${slot.course_name}</p>
+                      </div>
+                      ${slot.pages ? `
+                        <div class="mt-2 flex items-center justify-between text-[9px] font-semibold text-slate-400 pt-1.5 border-t border-slate-100">
+                          <span>${slot.pages}</span>
+                          <span class="text-blue-600 group-hover:translate-x-0.5 transition">&rarr;</span>
+                        </div>
+                      ` : ''}
+                    </a>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+          </div>
+        `;
+      }).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Sync user profile
+      const user = StudyGPS.getUser();
+      if (user) {
+        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+      }
+      renderWeeklyView();
+    });
+  </script>
 </body>
 </html>

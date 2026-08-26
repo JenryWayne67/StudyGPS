@@ -391,7 +391,7 @@
 
           <footer class="review-foot">
             <a href="course-library.html" class="btn btn-ghost">Return to Course</a>
-            <a href="#" class="btn btn-primary" id="btnNextTopic">Next Topic</a>
+            <a href="progress.html" class="btn btn-primary" id="btnNextTopic">Next Topic</a>
           </footer>
         </section>
 
@@ -399,6 +399,46 @@
     </div>
   </main>
 </div>
+
+<script>
+  (function() {
+    const quizEl = document.getElementById('quiz');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const options = document.querySelectorAll('input[name="q2"]');
+    const scoreNumber = document.getElementById('scoreNumber');
+    const scoreRing = document.getElementById('scoreRing');
+    const scoreHeadline = document.getElementById('scoreHeadline');
+    const scoreMsg = document.getElementById('scoreMsg');
+
+    options.forEach(opt => {
+      opt.addEventListener('change', () => {
+        btnSubmit.removeAttribute('disabled');
+      });
+    });
+
+    btnSubmit.addEventListener('click', () => {
+      // Switch state to review
+      quizEl.setAttribute('data-state', 'review');
+
+      // Check selected option
+      const selected = document.querySelector('input[name="q2"]:checked');
+      const isCorrect = selected && selected.id === 'optC';
+      
+      const score = isCorrect ? 100 : 75;
+      scoreNumber.textContent = score + '%';
+
+      // 100 - score
+      scoreRing.style.strokeDashoffset = (100 - score);
+      
+      if (score >= 75) {
+        scoreHeadline.textContent = 'Solid Understanding';
+        scoreMsg.textContent = isCorrect 
+          ? 'Perfect score! You mastered recursion concepts.' 
+          : 'You passed the threshold for this section. Review the call stack concept below.';
+      }
+    });
+  })();
+</script>
 
 </body>
 </html>

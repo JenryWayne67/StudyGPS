@@ -1,0 +1,6 @@
+{
+  "name": "StudyGPS",
+  "description": "Academic navigation system turning syllabi, deadlines, and study habits into structured daily routes, progress analytics, quizzes, and course material management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

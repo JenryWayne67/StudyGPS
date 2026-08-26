@@ -1,308 +1,268 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>StudyGPS — Dashboard</title>
-  
-<link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
-  <div class="app">
-  <!--SIDEBAR-->
-  <aside class="sidebar">
-  <div class="brand">
-      <span class="brand-mark">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5z"></path>
-        </svg>
-      </span> 
-        <span class="brand-text">
-             <strong>StudyGPS</strong>
-             <small>Academic OS</small>
-        </span>
-      </div>
-          <button class="btn btn-primary btn-block">
-        <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
-        New Study Session
-      </button>
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="app-sidebar">
+      <a href="dashboard.html" class="brand-header">
+        <div class="brand-logo">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">StudyGPS</span>
+          <span class="brand-subtitle">Academic OS</span>
+        </div>
+      </a>
 
-      <nav class="nav">
-
-        <a class="nav-item is-active" href="dashboard.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="nav-link active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
           </svg>
           Dashboard
         </a>
-
-        <a class="nav-item" href="course-library.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v15H6.5A2.5 2.5 0 0 0 4 19.5z"/>
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20v5H6.5A2.5 2.5 0 0 1 4 19.5z"/>
+        <a href="materials.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path><path d="M6 10h10"></path>
           </svg>
-          Course Library
+          Materials
         </a>
-
-        <a class="nav-item" href="route.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/>
-            <path d="M6 16.5V9a3 3 0 0 1 3-3h6"/><path d="M18 7.5V15a3 3 0 0 1-3 3H9"/>
+        <a href="tasks.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          Study Route
+          Tasks & Timer
         </a>
-
-        <a class="nav-item" href="tasks.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>
+        <a href="schedule.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
           </svg>
-          Tasks
+          Schedule
         </a>
-
-        <a class="nav-item" href="quiz.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>
-          </svg>
-          Quiz History
-        </a>
-
-        <a class="nav-item" href="progress.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <path d="M4 20V4"/><path d="M4 20h16"/><path d="m7 15 3.5-4 3 2.5L19 7"/>
+        <a href="progress.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
           Progress
         </a>
-
-        <a class="nav-item" href="reports.html">
-          <svg class="icon" viewBox="0 0 24 24">
-            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-            <path d="M14 3v5h5"/><path d="M9 14h6M9 17h4"/>
-          </svg>
-          Reports
-        </a>
-
-        <a class="nav-item" href="#">
-          <svg class="icon" viewBox="0 0 24 24">
-            <circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>
-          </svg>
-          Profile
-        </a>
-
       </nav>
 
-      <div class="sidebar-footer">
-        <span class="avatar">AJ</span>
-        <span class="user-meta">
-          <strong>Alex Johnson</strong>
-          <small>Computer Science</small>
-        </span>
+      <div class="sidebar-user">
+        <div class="user-badge">
+          <span class="user-avatar" id="avatarLetter">AJ</span>
+          <div class="user-details">
+            <span class="user-name" id="userName">Alex Johnson</span>
+            <span class="user-role">Computer Science</span>
+          </div>
+        </div>
+        <a href="/api/auth/logout" title="Logout" class="text-slate-400 hover:text-red-600 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </a>
       </div>
-
     </aside>
 
-    <!-- ==================== MAIN ==================== -->
-    <div class="main">
-
-      <header class="topbar">
-
-        <label class="search">
-          <svg class="icon" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
-          </svg>
-          <input type="text" placeholder="Search courses, notes..." />
-        </label>
-
-        <div class="topbar-actions">
-          <button class="icon-btn" title="Notifications">
-            <svg class="icon" viewBox="0 0 24 24">
-              <path d="M18 8a6 6 0 0 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/>
-            </svg>
-            <span class="dot"></span>
-          </button>
-
-          <label class="icon-btn" for="theme-toggle" title="Toggle dark mode">
-            <svg class="icon" viewBox="0 0 24 24">
-              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5"/>
-            </svg>
-          </label>
-
-          <button class="icon-btn" title="Settings">
-            <svg class="icon" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="3.2"/>
-              <path d="M12 2.6v2.2M12 19.2v2.2M21.4 12h-2.2M4.8 12H2.6M18.6 5.4l-1.5 1.5M6.9 17.1l-1.5 1.5M18.6 18.6l-1.5-1.5M6.9 6.9 5.4 5.4"/>
-            </svg>
-          </button>
+    <!-- MAIN CONTENT -->
+    <main class="app-main">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h1 class="page-title">Good evening 👋</h1>
+          <p class="text-sm text-slate-500 font-medium">Here is your customized academic flight plan for today.</p>
         </div>
+        <a href="interview.html" class="btn btn-secondary btn-sm">
+          ⚙️ Study Preferences
+        </a>
+      </div>
 
-      </header>
-
-      <main class="content">
-
-        <div class="page-head">
-          <h1>Good evening, Student</h1>
-          <p>Here is your academic snapshot for today.</p>
+      <!-- Top 3 Metric Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="statTasks">8 / 12</div>
+          <div class="stat-label">Tasks Completed</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statTime">4h 30m</div>
+          <div class="stat-label">Studied This Week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-blue-600" id="statRate">67%</div>
+          <div class="stat-label">Route Completion</div>
+        </div>
+      </div>
 
-        <div class="grid">
+      <!-- Two Column Layout: Today's Study & Next Recommended -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left 2 Cols: Today's Study Timeline -->
+        <div class="lg:col-span-2 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-base font-bold text-slate-900 tracking-tight">Today's Study</h2>
+            <span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md" id="currentDateLabel">Wednesday, Aug 26</span>
+          </div>
 
-          <!-- ---------- LEFT COLUMN ---------- -->
-          <section class="col-main">
-
-            <!-- Next task -->
-            <article class="card card-accent">
-
-              <div class="card-top">
-                <span class="eyebrow">YOUR NEXT TASK</span>
-                <span class="chip chip-muted">
-                  <svg class="icon icon-sm" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
-                  </svg>
-                  Est: 35 mins
-                </span>
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm divide-y divide-slate-100 space-y-4" id="todayStudyContainer">
+            <!-- Timeline Item 1 -->
+            <div class="pt-2 flex items-center justify-between gap-4">
+              <div class="space-y-1">
+                <span class="text-xs font-bold text-blue-600">6:00 PM</span>
+                <h3 class="text-sm font-bold text-slate-900">Logical Operators</h3>
+                <p class="text-xs text-slate-500 font-medium">Discrete Mathematics • Pages 7–10 (50 min)</p>
               </div>
-
-              <h2 class="task-title"><span class="glyph">&Sigma;</span> Discrete Mathematics</h2>
-
-              <p class="task-source">
-                <svg class="icon icon-sm" viewBox="0 0 24 24">
-                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>
-                </svg>
-                Recursion.pdf, Chapter 3.2, Pages 152&ndash;160
-              </p>
-
-              <div class="task-note">
-                <strong>Task:</strong> Complete exercises 5&ndash;10 at the end of the chapter. Focus on
-                establishing the base case clearly before structural induction.
-              </div>
-
-              <button class="btn btn-primary">
-                <svg class="icon icon-sm" viewBox="0 0 24 24">
-                  <path d="M7 4.5v15l13-7.5z" fill="currentColor" stroke="none"/>
-                </svg>
-                START TASK
-              </button>
-
-            </article>
-
-            <div class="grid-2">
-
-              <!-- Study route -->
-              <article class="card">
-                <h3 class="card-title">
-                  <svg class="icon icon-sm" viewBox="0 0 24 24">
-                    <circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/>
-                    <path d="M6 16.5V9a3 3 0 0 1 3-3h6"/><path d="M18 7.5V15a3 3 0 0 1-3 3H9"/>
-                  </svg>
-                  Today's Study Route
-                </h3>
-
-                <ol class="timeline">
-                  <li class="is-done">
-                    <span class="time">6:00 PM</span>
-                    <span class="label">Discrete Math</span>
-                  </li>
-                  <li class="is-done">
-                    <span class="time">6:40 PM</span>
-                    <span class="label">Break</span>
-                  </li>
-                  <li>
-                    <span class="time">6:50 PM</span>
-                    <span class="label">C++ Programming</span>
-                  </li>
-                </ol>
-              </article>
-
-              <!-- Performance -->
-              <article class="card">
-                <h3 class="card-title">
-                  <svg class="icon icon-sm" viewBox="0 0 24 24">
-                    <path d="M4 20V4"/><path d="M4 20h16"/><path d="m7 15 3.5-4 3 2.5L19 7"/>
-                  </svg>
-                  Performance
-                </h3>
-
-                <div class="meter">
-                  <div class="meter-head"><span>Semester Progress</span><b>72%</b></div>
-                  <div class="bar"><i style="width:72%"></i></div>
-                </div>
-
-                <div class="meter">
-                  <div class="meter-head"><span>Mastery Index</span><b>65%</b></div>
-                  <div class="bar"><i class="bar-green" style="width:65%"></i></div>
-                </div>
-
-                <p class="meter-foot">Target: 80% by Midterms</p>
-              </article>
-
+              <a href="tasks.html?task_id=15" class="btn btn-primary btn-sm whitespace-nowrap">
+                Start &rarr;
+              </a>
             </div>
 
-          </section>
+            <!-- Timeline Item 2 -->
+            <div class="pt-4 flex items-center justify-between gap-4">
+              <div class="space-y-1">
+                <span class="text-xs font-bold text-blue-600">7:00 PM</span>
+                <h3 class="text-sm font-bold text-slate-900">C++ Functions</h3>
+                <p class="text-xs text-slate-500 font-medium">C++ Programming • Pages 24–31 (50 min)</p>
+              </div>
+              <a href="tasks.html?task_id=22" class="btn btn-primary btn-sm whitespace-nowrap">
+                Start &rarr;
+              </a>
+            </div>
+          </div>
+        </div>
 
-          <!-- ---------- RIGHT COLUMN ---------- -->
-          <aside class="col-side">
+        <!-- Right 1 Col: Next Recommended Task & Quick Actions -->
+        <div class="space-y-4">
+          <h2 class="text-base font-bold text-slate-900 tracking-tight">Next Recommended Task</h2>
 
-            <!-- Deadlines -->
-            <article class="card">
-              <h3 class="card-title">
-                <svg class="icon icon-sm" viewBox="0 0 24 24">
-                  <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
-                </svg>
-                Upcoming Deadlines
-              </h3>
+          <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-md shadow-blue-500/10 space-y-4">
+            <span class="text-[11px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full inline-block">Priority 80</span>
+            <div>
+              <h3 class="text-base font-bold" id="recTaskTitle">Logical Operators</h3>
+              <p class="text-xs text-blue-100 mt-1" id="recTaskMeta">Discrete Mathematics • 50 min</p>
+            </div>
+            <a href="tasks.html?task_id=15" id="recTaskBtn" class="w-full bg-white hover:bg-blue-50 text-blue-700 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm">
+              Study Now ⏱
+            </a>
+          </div>
 
-              <ul class="deadlines">
-                <li>
-                  <span class="date"><small>OCT</small><b>12</b></span>
-                  <span class="info">
-                    <strong>CS301 Project Proposal</strong>
-                    <small>Due at 11:59 PM</small>
-                  </span>
-                </li>
-                <li>
-                  <span class="date"><small>OCT</small><b>15</b></span>
-                  <span class="info">
-                    <strong>Math Problem Set 4</strong>
-                    <small>In-class submission</small>
-                  </span>
-                </li>
-              </ul>
-            </article>
-
-            <!-- Weak areas -->
-            <article class="card">
-              <h3 class="card-title">
-                <svg class="icon icon-sm" viewBox="0 0 24 24">
-                  <path d="M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
-                  <path d="M12 9v4M12 17h.01"/>
-                </svg>
-                Weak Areas Focus
-              </h3>
-
-              <ul class="weak-list">
-                <li><span>Pointers (C++)</span><span class="chip chip-blue">Review</span></li>
-                <li><span>Graph Theory</span><span class="chip chip-blue">Quiz Prep</span></li>
-              </ul>
-            </article>
-
-            <!-- Recommended action -->
-            <article class="card card-dark">
-              <h3 class="card-title">Recommended Action</h3>
-              <p>
-                Based on your recent quiz scores, reviewing Chapter 4 of C++ basics will
-                boost your mastery projection by 5%.
-              </p>
-              <button class="btn btn-light btn-block">View Study Materials</button>
-            </article>
-
-          </aside>
+          <!-- Quick Navigation Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Quick Actions</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <a href="materials.html" class="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl text-center transition">
+                <span class="text-base block mb-1">📄</span>
+                <span class="text-xs font-bold text-slate-700 block">Upload PDF</span>
+              </a>
+              <a href="schedule.html" class="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl text-center transition">
+                <span class="text-base block mb-1">📅</span>
+                <span class="text-xs font-bold text-slate-700 block">My Schedule</span>
+              </a>
+            </div>
+          </div>
 
         </div>
-      </main>
-    </div>
+
+      </div>
+    </main>
   </div>
 
+  <!-- MOBILE BOTTOM NAVIGATION -->
+  <nav class="mobile-nav-bar" aria-label="Mobile Navigation">
+    <a href="dashboard.html" class="mobile-nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+    <a href="materials.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+        <path d="M6 6h10"></path><path d="M6 10h10"></path>
+      </svg>
+      <span>Materials</span>
+    </a>
+    <a href="tasks.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Tasks</span>
+    </a>
+    <a href="schedule.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+      <span>Schedule</span>
+    </a>
+    <a href="progress.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <span>Progress</span>
+    </a>
+  </nav>
+
+  <script src="app-store.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Sync user profile
+      const user = StudyGPS.getUser();
+      if (user) {
+        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+      }
+
+      // Sync progress stats
+      const progress = StudyGPS.getProgress();
+      document.getElementById('statTasks').textContent = `${progress.tasksCompleted} / ${progress.totalTasks}`;
+      document.getElementById('statTime').textContent = progress.studiedDisplay;
+      document.getElementById('statRate').textContent = `${progress.completionRate}%`;
+
+      // Render today's study timeline from store schedule
+      const schedules = StudyGPS.getSchedule();
+      const todayContainer = document.getElementById('todayStudyContainer');
+      const taskBlocks = schedules.filter(s => s.type === 'task');
+
+      if (taskBlocks.length > 0) {
+        todayContainer.innerHTML = taskBlocks.map((item, idx) => `
+          <div class="${idx > 0 ? 'pt-4' : 'pt-2'} flex items-center justify-between gap-4">
+            <div class="space-y-1">
+              <span class="text-xs font-bold text-blue-600">${item.time}</span>
+              <h3 class="text-sm font-bold text-slate-900">${item.title}</h3>
+              <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'} • ${item.pages || 'Session'} (${item.duration_minutes} min)</p>
+            </div>
+            <a href="tasks.html?task_id=${item.task_id || 15}" class="btn btn-primary btn-sm whitespace-nowrap">
+              Start &rarr;
+            </a>
+          </div>
+        `).join('');
+
+        // Update recommended task with first pending task
+        const firstTask = taskBlocks[0];
+        document.getElementById('recTaskTitle').textContent = firstTask.title;
+        document.getElementById('recTaskMeta').textContent = `${firstTask.course_name} • ${firstTask.duration_minutes} min`;
+        document.getElementById('recTaskBtn').href = `tasks.html?task_id=${firstTask.task_id || 15}`;
+      }
+    });
+  </script>
 </body>
 </html>

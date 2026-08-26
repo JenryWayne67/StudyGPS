@@ -1,371 +1,504 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StudyGPS — Daily Tasks</title>
-<link rel="stylesheet" href="tasks.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyGPS — Tasks & Study Timer</title>
+  <link rel="stylesheet" href="common.css">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
-<div class="layout">
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="app-sidebar">
+      <a href="dashboard.html" class="brand-header">
+        <div class="brand-logo">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">StudyGPS</span>
+          <span class="brand-subtitle">Academic OS</span>
+        </div>
+      </a>
 
-  <!-- ================= SIDEBAR ================= -->
-  <aside class="sidebar">
-    <div class="brand">
-      <span class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5z"></path>
-        </svg>
-      </span>
-      <span class="brand-text">
-        <strong>StudyGPS</strong>
-        <small>Academic OS</small>
-      </span>
-    </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          Dashboard
+        </a>
+        <a href="materials.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path><path d="M6 10h10"></path>
+          </svg>
+          Materials
+        </a>
+        <a href="tasks.html" class="nav-link active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          Tasks & Timer
+        </a>
+        <a href="schedule.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Schedule
+        </a>
+        <a href="progress.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          Progress
+        </a>
+      </nav>
 
-    <a href="#" class="btn-new">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-      New Study Session
-    </a>
+      <div class="sidebar-user">
+        <div class="user-badge">
+          <span class="user-avatar" id="avatarLetter">AJ</span>
+          <div class="user-details">
+            <span class="user-name" id="userName">Alex Johnson</span>
+            <span class="user-role">Computer Science</span>
+          </div>
+        </div>
+        <a href="/api/auth/logout" title="Logout" class="text-slate-400 hover:text-red-600 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </a>
+      </div>
+    </aside>
 
-    <nav class="nav">
-      <a href="dashboard.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
-          <rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect>
-        </svg>
-        Dashboard
-      </a>
-      <a href="course-library.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-        </svg>
-        Course Library
-      </a>
-      <a href="route.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="6" cy="19" r="3"></circle><circle cx="18" cy="5" r="3"></circle>
-          <path d="M9 19h4a4 4 0 0 0 4-4V9"></path>
-        </svg>
-        Study Route
-      </a>
-      <a href="tasks.html" class="nav-item is-active">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle><polyline points="8.5 12 11 14.5 15.5 9.5"></polyline>
-        </svg>
-        Tasks
-      </a>
-      <a href="quiz.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="4" y="3" width="16" height="18" rx="2"></rect>
-          <line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line>
-          <line x1="8" y1="16" x2="12" y2="16"></line>
-        </svg>
-        Quiz History
-      </a>
-      <a href="progress.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline>
-        </svg>
-        Progress
-      </a>
-      <a href="reports.html" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line>
-        </svg>
-        Reports
-      </a>
-      <a href="#" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>
-        </svg>
-        Profile
-      </a>
-    </nav>
-  </aside>
-
-  <!-- ================= MAIN ================= -->
-  <div class="main">
-
-    <header class="topbar">
-      <div class="search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input type="text" placeholder="Search courses, tasks..." aria-label="Search courses and tasks">
+    <!-- MAIN CONTENT -->
+    <main class="app-main">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 class="page-title">Tasks & Study Timer</h1>
+          <p class="text-sm text-slate-500 font-medium">Select any prioritized study module to start an active focus timer session immediately.</p>
+        </div>
+        <a href="materials.html" class="btn btn-secondary btn-sm whitespace-nowrap">
+          + Add from Material
+        </a>
       </div>
 
-      <button class="icon-btn has-dot" type="button" aria-label="Notifications">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-        </svg>
-      </button>
-      <button class="icon-btn" type="button" aria-label="Settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09A1.65 1.65 0 0 0 21 10h.09a2 2 0 0 1 0 4H21a1.65 1.65 0 0 0-1.6 1z"></path>
-        </svg>
-      </button>
-      <span class="user-avatar">AJ</span>
-    </header>
+      <!-- MAIN CONTENT WORKSPACE -->
+      <div class="max-w-4xl space-y-6">
+        
+        <!-- Filters Bar -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Filter:</span>
+            
+            <!-- Scope / Time -->
+            <select id="filterTime" onchange="renderTasks()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="All" selected>All Time</option>
+              <option value="TODAY">Today Only</option>
+              <option value="UPCOMING">Upcoming</option>
+            </select>
 
-    <main class="content">
+            <!-- Course -->
+            <select id="filterCourse" onchange="renderTasks()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="All" selected>All Courses</option>
+            </select>
 
-      <div class="page-head">
-        <h1 class="page-title">Daily Tasks</h1>
-        <p class="page-sub">Focus on your personalized study route for today.</p>
-      </div>
+            <!-- Status -->
+            <select id="filterStatus" onchange="renderTasks()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="All" selected>All Statuses</option>
+              <option value="Not Started">Not Started</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
 
-      <div class="split">
+          <span class="text-xs text-slate-400 font-medium hidden sm:inline-block">Click <strong class="text-blue-600 font-semibold">Start Studying</strong> on any task to open its focus timer</span>
+        </div>
 
-        <!-- ============ TASK LIST ============ -->
-        <section class="task-column">
-
-          <header class="today-row">
-            <h2 class="today-label">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-                <line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line>
-              </svg>
-              Today
-            </h2>
-            <span class="remaining">4 Tasks Remaining</span>
-          </header>
-
-          <ul class="task-list">
-
-            <!-- Task 1 — high -->
-            <li class="card task high">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">Discrete Mathematics</span>
-                  <span class="chip prio-high">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-                      <line x1="12" y1="6" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                    High
-                  </span>
-                </div>
-                <a href="timer.html" class="btn-start">
-                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 20 12 7 20"></polygon></svg>
-                  Start Task
-                </a>
-              </div>
-
-              <h3 class="task-name">
-                <a href="tasks.html">Review Recursion Section 3.2</a>
-              </h3>
-
-              <p class="task-meta">
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline>
-                  </svg>
-                  35 mins
-                </span>
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                  Reading &amp; Notes
-                </span>
-              </p>
-            </li>
-
-            <!-- Task 2 — medium -->
-            <li class="card task medium">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">C++ Programming</span>
-                  <span class="chip prio-medium">Medium</span>
-                </div>
-                <a href="timer.html" class="btn-start ghost">
-                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 20 12 7 20"></polygon></svg>
-                  Start Task
-                </a>
-              </div>
-
-              <h3 class="task-name">
-                <a href="tasks.html">Complete Pointer Exercises</a>
-              </h3>
-
-              <p class="task-meta">
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline>
-                  </svg>
-                  45 mins
-                </span>
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 8 5 12 9 16"></polyline><polyline points="15 8 19 12 15 16"></polyline>
-                  </svg>
-                  Practice
-                </span>
-              </p>
-            </li>
-
-            <!-- Task 3 — medium -->
-            <li class="card task medium">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">Modern History</span>
-                  <span class="chip prio-medium">Medium</span>
-                </div>
-                <a href="timer.html" class="btn-start ghost">
-                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 20 12 7 20"></polygon></svg>
-                  Start Task
-                </a>
-              </div>
-
-              <h3 class="task-name">
-                <a href="tasks.html">Submit Essay Draft</a>
-              </h3>
-
-              <p class="task-meta">
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline>
-                  </svg>
-                  1h 20m
-                </span>
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                  </svg>
-                  Writing
-                </span>
-              </p>
-            </li>
-
-            <!-- Task 4 — low -->
-            <li class="card task low">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">Spanish 101</span>
-                  <span class="chip prio-low">Low</span>
-                </div>
-                <a href="timer.html" class="btn-start ghost">
-                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 20 12 7 20"></polygon></svg>
-                  Start Task
-                </a>
-              </div>
-
-              <h3 class="task-name">
-                <a href="task_detail.html">Review Flashcards</a>
-              </h3>
-
-              <p class="task-meta">
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline>
-                  </svg>
-                  15 mins
-                </span>
-                <span class="meta">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="6" width="14" height="14" rx="2"></rect>
-                    <path d="M7 3h11a3 3 0 0 1 3 3v11"></path>
-                  </svg>
-                  Memorization
-                </span>
-              </p>
-            </li>
-
-          </ul>
-
-          <!-- completed -->
-          <header class="today-row done-row">
-            <h2 class="today-label">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="9"></circle><polyline points="8.5 12 11 14.5 15.5 9.5"></polyline>
-              </svg>
-              Completed
-            </h2>
-            <span class="remaining done">2 Done</span>
-          </header>
-
-          <ul class="task-list">
-            <li class="card task is-done">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">Data Structures</span>
-                  <span class="chip prio-done">Completed</span>
-                </div>
-                <span class="done-time">32 mins logged</span>
-              </div>
-              <h3 class="task-name"><a href="task_detail.html">Trace Binary Tree Traversals</a></h3>
-            </li>
-
-            <li class="card task is-done">
-              <div class="task-top">
-                <div class="task-chips">
-                  <span class="chip course">C++ Programming</span>
-                  <span class="chip prio-done">Completed</span>
-                </div>
-                <span class="done-time">18 mins logged</span>
-              </div>
-              <h3 class="task-name"><a href="task_detail.html">Read Chapter 8 Intro</a></h3>
-            </li>
-          </ul>
-
-          <a href="#" class="history-link">View Task History →</a>
-        </section>
-
-        <!-- ============ RIGHT RAIL ============ -->
-        <aside class="rail">
-
-          <section class="card focus-card">
-            <h2 class="rail-title">Focus Stats</h2>
-
-            <p class="rail-label">Study Hours Today</p>
-            <p class="focus-value">2.5<small>/4h</small></p>
-
-            <div class="focus-row">
-              <div class="bar"><span class="bar-fill" style="--w:62%"></span></div>
-              <span class="ontrack">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline>
-                </svg>
-                On Track
-              </span>
+        <!-- Tasks Sections: TODAY -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">TODAY</h2>
+              <span class="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full" id="todayCountBadge">2 tasks</span>
             </div>
-          </section>
+            <span class="text-[11px] text-slate-400 font-medium">Daily Flight Plan</span>
+          </div>
 
-          <section class="card rail-card">
-            <h2 class="rail-title">Today's Breakdown</h2>
-            <ul class="breakdown">
-              <li><span class="bd-dot blue"></span>Reading &amp; Notes<span class="bd-val">35m</span></li>
-              <li><span class="bd-dot green"></span>Practice<span class="bd-val">45m</span></li>
-              <li><span class="bd-dot amber"></span>Writing<span class="bd-val">1h 20m</span></li>
-              <li><span class="bd-dot violet"></span>Memorization<span class="bd-val">15m</span></li>
-            </ul>
-          </section>
+          <div class="space-y-4" id="todayTasksList">
+            <!-- Populated via script -->
+          </div>
+        </div>
 
-          <section class="card rail-card">
-            <h2 class="rail-title">Important Deadlines</h2>
-            <ul class="deadlines">
-              <li><span class="dl red">Midterms (Oct 15)</span></li>
-              <li><span class="dl green">Project Alpha</span></li>
-            </ul>
-          </section>
+        <!-- UPCOMING -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">UPCOMING</h2>
+              <span class="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full" id="upcomingCountBadge">2 tasks</span>
+            </div>
+            <span class="text-[11px] text-slate-400 font-medium">Upcoming Modules</span>
+          </div>
 
-        </aside>
+          <div class="space-y-4" id="upcomingTasksList">
+            <!-- Populated via script -->
+          </div>
+        </div>
+
       </div>
+
     </main>
   </div>
-</div>
 
+  <!-- MOBILE BOTTOM NAVIGATION -->
+  <nav class="mobile-nav-bar" aria-label="Mobile Navigation">
+    <a href="dashboard.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+    <a href="materials.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+        <path d="M6 6h10"></path><path d="M6 10h10"></path>
+      </svg>
+      <span>Materials</span>
+    </a>
+    <a href="tasks.html" class="mobile-nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Tasks</span>
+    </a>
+    <a href="schedule.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+      <span>Schedule</span>
+    </a>
+    <a href="progress.html" class="mobile-nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <span>Progress</span>
+    </a>
+  </nav>
+
+  <script src="app-store.js"></script>
+  <script>
+    // State management
+    let activeTaskId = null;
+    let plannedMinutes = 50;
+    let totalSeconds = 50 * 60;
+    let remainingSeconds = 50 * 60;
+    let timerInterval = null;
+    let isRunning = false;
+    let isTimerActive = false;
+
+    function getQueryParam(name) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(name);
+    }
+
+    function populateCourseFilter() {
+      const courses = StudyGPS.getCourses();
+      const courseSelect = document.getElementById('filterCourse');
+      if (!courseSelect) return;
+      
+      const current = courseSelect.value || 'All';
+      courseSelect.innerHTML = `
+        <option value="All">All Courses</option>
+        ${courses.map(c => `<option value="${c.id}" ${String(c.id) === String(current) ? 'selected' : ''}>${c.name}</option>`).join('')}
+      `;
+    }
+
+    function startTaskTimer(taskId) {
+      activeTaskId = Number(taskId);
+      const task = StudyGPS.getTaskById(activeTaskId);
+      if (!task) return;
+
+      isTimerActive = true;
+      plannedMinutes = task.estimated_minutes || 50;
+      totalSeconds = plannedMinutes * 60;
+      remainingSeconds = totalSeconds;
+      isRunning = true;
+
+      renderTasks();
+      startInterval();
+      updateTimerDisplay();
+    }
+
+    function closeActiveTimer() {
+      clearInterval(timerInterval);
+      isRunning = false;
+      isTimerActive = false;
+      activeTaskId = null;
+      renderTasks();
+    }
+
+    function updateTimerDisplay() {
+      const displayEl = document.getElementById('inlineTimeDisplay');
+      const progressEl = document.getElementById('inlineProgressBar');
+      const stateLabelEl = document.getElementById('inlineStateLabel');
+      
+      if (!displayEl) return;
+
+      const m = Math.floor(remainingSeconds / 60);
+      const s = remainingSeconds % 60;
+      displayEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+      if (progressEl) {
+        const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
+        progressEl.style.width = `${percent}%`;
+      }
+
+      if (stateLabelEl) {
+        stateLabelEl.textContent = isRunning ? 'Focusing...' : 'Paused';
+      }
+    }
+
+    function startInterval() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (remainingSeconds > 0) {
+          remainingSeconds--;
+          updateTimerDisplay();
+        } else {
+          clearInterval(timerInterval);
+          finishTimer();
+        }
+      }, 1000);
+    }
+
+    function pauseTimer() {
+      isRunning = false;
+      clearInterval(timerInterval);
+      const btnPause = document.getElementById('inlineBtnPause');
+      const btnResume = document.getElementById('inlineBtnResume');
+      if (btnPause && btnResume) {
+        btnPause.classList.add('hidden');
+        btnResume.classList.remove('hidden');
+      }
+      updateTimerDisplay();
+    }
+
+    function resumeTimer() {
+      isRunning = true;
+      const btnPause = document.getElementById('inlineBtnPause');
+      const btnResume = document.getElementById('inlineBtnResume');
+      if (btnPause && btnResume) {
+        btnResume.classList.add('hidden');
+        btnPause.classList.remove('hidden');
+      }
+      updateTimerDisplay();
+      startInterval();
+    }
+
+    function addTime(mins) {
+      const addedSec = mins * 60;
+      totalSeconds += addedSec;
+      remainingSeconds += addedSec;
+      updateTimerDisplay();
+    }
+
+    function resetTimer() {
+      pauseTimer();
+      remainingSeconds = totalSeconds;
+      updateTimerDisplay();
+      const btnPause = document.getElementById('inlineBtnPause');
+      const btnResume = document.getElementById('inlineBtnResume');
+      if (btnPause && btnResume) {
+        btnPause.classList.add('hidden');
+        btnResume.classList.remove('hidden');
+      }
+    }
+
+    function finishTimer() {
+      clearInterval(timerInterval);
+      const actualMinutes = Math.max(1, Math.round((totalSeconds - remainingSeconds) / 60));
+      
+      // Record completed session in store
+      StudyGPS.recordStudySession(activeTaskId, plannedMinutes, actualMinutes, 1);
+
+      // Close current timer and re-render
+      closeActiveTimer();
+    }
+
+    function renderTasks() {
+      const timeFilter = document.getElementById('filterTime').value;
+      const courseFilter = document.getElementById('filterCourse').value;
+      const statusFilter = document.getElementById('filterStatus').value;
+
+      let allTasks = StudyGPS.getTasks();
+
+      if (courseFilter !== 'All') {
+        allTasks = allTasks.filter(t => String(t.course_id) === courseFilter);
+      }
+      if (statusFilter !== 'All') {
+        allTasks = allTasks.filter(t => t.status === statusFilter);
+      }
+
+      const todayTasks = allTasks.filter(t => t.time_group === 'TODAY');
+      const upcomingTasks = allTasks.filter(t => t.time_group === 'UPCOMING');
+
+      document.getElementById('todayCountBadge').textContent = `${todayTasks.length} tasks`;
+      document.getElementById('upcomingCountBadge').textContent = `${upcomingTasks.length} tasks`;
+
+      const createCard = (task) => {
+        const isHigh = task.priority >= 75;
+        const priorityDot = isHigh ? '🔴' : (task.priority >= 65 ? '🟡' : '🟢');
+        const isDone = task.status === 'Completed';
+        const isCurrentActive = isTimerActive && Number(task.id) === Number(activeTaskId);
+
+        const m = Math.floor(remainingSeconds / 60);
+        const s = remainingSeconds % 60;
+        const timeFormatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
+
+        return `
+          <div class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (isDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
+            
+            <!-- TOP BAR: TASK METADATA & ACTIONS -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span>${priorityDot}</span>
+                  <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${task.title}</h3>
+                  <span class="text-[10px] font-bold ${isHigh ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'} px-2 py-0.5 rounded">Priority: ${task.priority}</span>
+                  ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
+                </div>
+                <p class="text-xs text-slate-600 font-medium">${task.course_name}</p>
+                <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
+                  <span>${task.pages}</span>
+                  <span>•</span>
+                  <span>${task.estimated_minutes} min</span>
+                  <span>•</span>
+                  <span>Deadline: ${task.deadline}</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                ${isDone ? `
+                  <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                    ✓ Completed
+                  </span>
+                ` : (isCurrentActive ? `
+                  <button type="button" onclick="closeActiveTimer()" class="btn btn-secondary btn-sm whitespace-nowrap text-slate-500 hover:text-slate-700">
+                    ✕ Dismiss Timer
+                  </button>
+                ` : `
+                  <button type="button" onclick="startTaskTimer(${task.id})" class="btn btn-primary btn-sm whitespace-nowrap shadow-sm flex items-center gap-1.5 hover:bg-blue-700 transition">
+                    <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Start Studying
+                  </button>
+                `)}
+              </div>
+            </div>
+
+            <!-- INLINE TIMER PANEL: APPEARS ONLY UNDER THIS TASK WHEN STARTED -->
+            ${isCurrentActive ? `
+              <div class="pt-4 border-t border-blue-100 bg-blue-50/40 rounded-xl p-4 sm:p-5 mt-2 space-y-4 animate-in fade-in duration-200">
+                
+                <!-- Timer Header & Digits -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center text-xl shadow-sm">
+                      ⏱
+                    </div>
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">ACTIVE STUDY TIMER</span>
+                        <span class="text-[11px] font-semibold text-slate-400" id="inlineStateLabel">${isRunning ? 'Focusing...' : 'Paused'}</span>
+                      </div>
+                      <span id="inlineTimeDisplay" class="font-mono text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">${timeFormatted}</span>
+                    </div>
+                  </div>
+
+                  <!-- Quick Action Buttons -->
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button id="inlineBtnPause" onclick="pauseTimer()" class="${isRunning ? '' : 'hidden'} py-2 px-3.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                      <span>⏸</span> Pause
+                    </button>
+                    <button id="inlineBtnResume" onclick="resumeTimer()" class="${isRunning ? 'hidden' : ''} py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                      <span>▶</span> Resume
+                    </button>
+                    <button onclick="finishTimer()" class="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                      <span>✓</span> Complete Task
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Sleek Progress Bar -->
+                <div class="space-y-1.5">
+                  <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div id="inlineProgressBar" class="bg-blue-600 h-full rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                    <span>Target: ${plannedMinutes} minutes</span>
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-slate-400">Add:</span>
+                      <button type="button" onclick="addTime(5)" class="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded text-[10px] font-semibold transition">+5m</button>
+                      <button type="button" onclick="addTime(15)" class="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded text-[10px] font-semibold transition">+15m</button>
+                      <button type="button" onclick="resetTimer()" class="px-2 py-0.5 bg-white hover:bg-rose-50 border border-slate-200 text-slate-600 hover:text-rose-600 rounded text-[10px] font-semibold transition">Reset</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            ` : ''}
+
+          </div>
+        `;
+      };
+
+      const todayContainer = document.getElementById('todayTasksList');
+      if (todayTasks.length === 0) {
+        todayContainer.innerHTML = `<div class="p-6 bg-white border border-slate-200 rounded-2xl text-center text-xs text-slate-400">No tasks for today matching filters.</div>`;
+      } else {
+        todayContainer.innerHTML = todayTasks.map(createCard).join('');
+      }
+
+      const upcomingContainer = document.getElementById('upcomingTasksList');
+      if (upcomingTasks.length === 0) {
+        upcomingContainer.innerHTML = `<div class="p-6 bg-white border border-slate-200 rounded-2xl text-center text-xs text-slate-400">No upcoming tasks matching filters.</div>`;
+      } else {
+        upcomingContainer.innerHTML = upcomingTasks.map(createCard).join('');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Sync user profile
+      const user = StudyGPS.getUser();
+      if (user) {
+        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+      }
+
+      populateCourseFilter();
+      renderTasks();
+
+      // Check if user came from a direct "Start" link on Dashboard or Schedule
+      const paramTaskId = getQueryParam('task_id');
+      if (paramTaskId) {
+        startTaskTimer(paramTaskId);
+      }
+    });
+  </script>
 </body>
 </html>
+
