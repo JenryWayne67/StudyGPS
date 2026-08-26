@@ -92,19 +92,24 @@
             <p class="text-xs text-slate-500 font-medium mt-0.5">Algorithmically optimized flight plan across all courses</p>
           </div>
 
-          <!-- Week Switcher: ← Aug 24 – Aug 30 → -->
-          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1.5 self-start sm:self-auto">
-            <button onclick="changeWeek(-1)" title="Previous Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold">
-              ←
-            </button>
-            <span class="text-xs sm:text-sm font-bold text-slate-800 px-3 select-none min-w-[130px] text-center" id="weekRangeLabel">
-              Aug 24 – Aug 30
-            </span>
-            <button onclick="changeWeek(1)" title="Next Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold">
-              →
-            </button>
-            <button onclick="resetToCurrentWeek()" class="text-[11px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition ml-1">
-              Current
+          <!-- Week Switcher & Preferences -->
+          <div class="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl p-1.5">
+              <button onclick="changeWeek(-1)" title="Previous Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold cursor-pointer">
+                ←
+              </button>
+              <span class="text-xs sm:text-sm font-bold text-slate-800 px-3 select-none min-w-[130px] text-center" id="weekRangeLabel">
+                Aug 24 – Aug 30
+              </span>
+              <button onclick="changeWeek(1)" title="Next Week" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 transition shadow-xs text-sm font-bold cursor-pointer">
+                →
+              </button>
+              <button onclick="resetToCurrentWeek()" class="text-[11px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition ml-0.5 cursor-pointer">
+                Current
+              </button>
+            </div>
+            <button onclick="openHoursModal()" class="btn btn-secondary btn-sm flex items-center gap-1.5 py-2 cursor-pointer shadow-xs">
+              <span>⚙️</span> Customize Study Hours
             </button>
           </div>
         </div>
@@ -184,9 +189,229 @@
     </a>
   </nav>
 
+  <!-- CUSTOMIZE STUDY HOURS MODAL -->
+  <div id="hoursModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl border border-slate-200 shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+            ⚙️
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-900 text-base">Customize Daily Study Hours</h3>
+            <p class="text-[11px] text-slate-500 font-medium">Set any start and end time (AM/PM) for each day of the week</p>
+          </div>
+        </div>
+        <button onclick="closeHoursModal()" class="w-8 h-8 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center font-bold text-base transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- Quick Presets -->
+      <div class="p-4 bg-slate-50 border-b border-slate-100 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quick Presets</span>
+          <a href="interview.html" class="text-[11px] font-bold text-blue-600 hover:underline">Full Preference Setup &rarr;</a>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button type="button" onclick="applyModalPreset('evening')" class="px-2 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            🌙 Evening (6–9 PM)
+          </button>
+          <button type="button" onclick="applyModalPreset('morning')" class="px-2 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            ☀️ Morning (8–11:30 AM)
+          </button>
+          <button type="button" onclick="applyModalPreset('afternoon')" class="px-2 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            🌤️ Afternoon (1–4:30 PM)
+          </button>
+          <button type="button" onclick="applyModalPreset('night')" class="px-2 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            🦉 Night (8:30–11:30 PM)
+          </button>
+        </div>
+      </div>
+
+      <!-- Days List Scrollable -->
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-grow" id="modalDaysContainer">
+        <!-- Javascript renders per-day rows with AM/PM pickers -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+        <button type="button" onclick="closeHoursModal()" class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition">
+          Cancel
+        </button>
+        <button type="button" onclick="saveHoursModal()" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition">
+          Save & Recalculate Schedule
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <script src="app-store.js"></script>
   <script>
     let currentWeekOffset = 0;
+    const DAYS_ALL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const MINS_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    let modalPrefs = {};
+
+    function openHoursModal() {
+      modalPrefs = JSON.parse(JSON.stringify(StudyGPS.getPreferences()));
+      renderModalDays();
+      document.getElementById('hoursModal').classList.remove('hidden');
+    }
+
+    function closeHoursModal() {
+      document.getElementById('hoursModal').classList.add('hidden');
+    }
+
+    function renderModalDays() {
+      const container = document.getElementById('modalDaysContainer');
+      container.innerHTML = '';
+
+      const daySchedules = modalPrefs.day_schedules || {};
+
+      DAYS_ALL.forEach(day => {
+        const schedule = daySchedules[day] || { enabled: true, start: '18:00', end: '21:00' };
+        const isEnabled = schedule.enabled !== false;
+        const startParts = StudyGPS.splitTime24to12(schedule.start || '18:00');
+        const endParts = StudyGPS.splitTime24to12(schedule.end || '21:00');
+        const durText = StudyGPS.calcDurationText(schedule.start || '18:00', schedule.end || '21:00');
+
+        const row = document.createElement('div');
+        row.id = `mRow_${day}`;
+        row.className = `p-3 rounded-2xl border transition ${isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50/70 border-slate-200/60 opacity-60'}`;
+        
+        row.innerHTML = `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5 min-w-[120px]">
+              <input type="checkbox" id="mCheck_${day}" ${isEnabled ? 'checked' : ''} onchange="toggleModalDay('${day}', this.checked)" class="w-4 h-4 text-blue-600 rounded cursor-pointer">
+              <label for="mCheck_${day}" class="text-xs font-bold text-slate-800 cursor-pointer select-none">${day}</label>
+            </div>
+
+            <div id="mTimes_${day}" class="flex items-center gap-2 flex-wrap ${isEnabled ? '' : 'pointer-events-none opacity-40'}">
+              <!-- Start Time -->
+              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">Start</span>
+                <select id="mStartH_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
+                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === startParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
+                </select>
+                <span class="text-slate-400 font-bold text-xs">:</span>
+                <select id="mStartM_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
+                  ${MINS_OPTIONS.map(m => `<option value="${m}" ${m === startParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
+                </select>
+                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
+                  <button type="button" id="mStartAM_${day}" onclick="setModalAmPm('${day}', 'start', 'AM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${startParts.ampm === 'AM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">AM</button>
+                  <button type="button" id="mStartPM_${day}" onclick="setModalAmPm('${day}', 'start', 'PM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${startParts.ampm === 'PM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">PM</button>
+                </div>
+              </div>
+
+              <span class="text-slate-400 text-xs font-bold">→</span>
+
+              <!-- End Time -->
+              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">End</span>
+                <select id="mEndH_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
+                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === endParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
+                </select>
+                <span class="text-slate-400 font-bold text-xs">:</span>
+                <select id="mEndM_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
+                  ${MINS_OPTIONS.map(m => `<option value="${m}" ${m === endParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
+                </select>
+                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
+                  <button type="button" id="mEndAM_${day}" onclick="setModalAmPm('${day}', 'end', 'AM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${endParts.ampm === 'AM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">AM</button>
+                  <button type="button" id="mEndPM_${day}" onclick="setModalAmPm('${day}', 'end', 'PM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${endParts.ampm === 'PM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">PM</button>
+                </div>
+              </div>
+
+              <span id="mDur_${day}" class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-lg ml-auto sm:ml-0">
+                ${durText}
+              </span>
+            </div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function setModalAmPm(day, type, ampm) {
+      const amBtn = document.getElementById(`m${type === 'start' ? 'Start' : 'End'}AM_${day}`);
+      const pmBtn = document.getElementById(`m${type === 'start' ? 'Start' : 'End'}PM_${day}`);
+      if (ampm === 'AM') {
+        amBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-600 text-white';
+        pmBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded text-slate-600';
+      } else {
+        pmBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-600 text-white';
+        amBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded text-slate-600';
+      }
+      updateModalTime(day);
+    }
+
+    function updateModalTime(day) {
+      const startH = document.getElementById(`mStartH_${day}`)?.value || 6;
+      const startM = document.getElementById(`mStartM_${day}`)?.value || 0;
+      const startAmPm = document.getElementById(`mStartAM_${day}`)?.classList.contains('bg-blue-600') ? 'AM' : 'PM';
+
+      const endH = document.getElementById(`mEndH_${day}`)?.value || 9;
+      const endM = document.getElementById(`mEndM_${day}`)?.value || 0;
+      const endAmPm = document.getElementById(`mEndAM_${day}`)?.classList.contains('bg-blue-600') ? 'AM' : 'PM';
+
+      const start24 = StudyGPS.join12toTime24(startH, startM, startAmPm);
+      const end24 = StudyGPS.join12toTime24(endH, endM, endAmPm);
+
+      if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
+      const isEnabled = document.getElementById(`mCheck_${day}`)?.checked ?? true;
+      modalPrefs.day_schedules[day] = {
+        enabled: isEnabled,
+        start: start24,
+        end: end24
+      };
+
+      const badge = document.getElementById(`mDur_${day}`);
+      if (badge) {
+        badge.textContent = StudyGPS.calcDurationText(start24, end24);
+      }
+    }
+
+    function toggleModalDay(day, isEnabled) {
+      if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
+      if (!modalPrefs.day_schedules[day]) {
+        modalPrefs.day_schedules[day] = { enabled: isEnabled, start: '18:00', end: '21:00' };
+      } else {
+        modalPrefs.day_schedules[day].enabled = isEnabled;
+      }
+      renderModalDays();
+    }
+
+    function applyModalPreset(type) {
+      DAYS_ALL.forEach(day => {
+        if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
+        if (type === 'evening') {
+          modalPrefs.day_schedules[day] = { enabled: true, start: '18:00', end: '21:00' };
+        } else if (type === 'morning') {
+          modalPrefs.day_schedules[day] = { enabled: true, start: '08:00', end: '11:30' };
+        } else if (type === 'afternoon') {
+          modalPrefs.day_schedules[day] = { enabled: true, start: '13:00', end: '16:30' };
+        } else if (type === 'night') {
+          modalPrefs.day_schedules[day] = { enabled: true, start: '20:30', end: '23:30' };
+        }
+      });
+      renderModalDays();
+    }
+
+    function saveHoursModal() {
+      const activeDays = [];
+      DAYS_ALL.forEach(day => {
+        const isChecked = document.getElementById(`mCheck_${day}`)?.checked ?? true;
+        if (isChecked) activeDays.push(day);
+      });
+
+      modalPrefs.study_days = activeDays;
+      StudyGPS.savePreferences(modalPrefs);
+      closeHoursModal();
+      renderWeeklyView();
+    }
 
     function changeWeek(delta) {
       currentWeekOffset += delta;
@@ -221,9 +446,10 @@
       const gridContainer = document.getElementById('weeklyGridContainer');
       gridContainer.innerHTML = scheduleData.days.map(day => {
         const isToday = day.isToday;
+        const isRest = day.isRestDay;
         
         return `
-          <div class="flex flex-col bg-slate-50/70 border ${isToday ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/20' : 'border-slate-200'} rounded-2xl p-3.5 space-y-4">
+          <div class="flex flex-col bg-slate-50/70 border ${isToday ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/20' : 'border-slate-200'} rounded-2xl p-3.5 space-y-3.5">
             
             <!-- Day Column Header -->
             <div class="text-center pb-2 border-b ${isToday ? 'border-blue-200' : 'border-slate-200/80'}">
@@ -232,11 +458,22 @@
                 ${isToday ? '<span class="text-[9px] font-bold bg-blue-600 text-white px-1.5 py-0.2 rounded-full">TODAY</span>' : ''}
               </div>
               <span class="text-[11px] font-semibold text-slate-400 block">${day.dateStr}</span>
+              ${isRest ? `
+                <span class="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">Off / Rest</span>
+              ` : (day.startTimeFormatted ? `
+                <span class="text-[10px] font-bold text-blue-600 bg-blue-50/80 px-2 py-0.5 rounded-full inline-block mt-1">${day.startTimeFormatted}</span>
+              ` : '')}
             </div>
 
             <!-- Stacked Time Slots -->
             <div class="space-y-3 flex-grow flex flex-col justify-start">
-              ${day.slots.map(slot => {
+              ${isRest ? `
+                <div class="flex-grow flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-200 bg-white/70 text-slate-400 text-center space-y-1.5 min-h-[140px]">
+                  <span class="text-lg">🌿</span>
+                  <span class="text-xs font-bold text-slate-600">Rest Day</span>
+                  <span class="text-[10px] text-slate-400 font-medium leading-tight">No sessions scheduled for ${day.fullDayName || day.dayName}</span>
+                </div>
+              ` : day.slots.map(slot => {
                 if (slot.isFree || slot.title === '─────') {
                   return `
                     <div class="space-y-1 text-center py-2">

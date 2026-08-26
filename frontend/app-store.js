@@ -24,7 +24,16 @@ const DEFAULT_COURSES = [
 ];
 
 const DEFAULT_PREFERENCES = {
-  study_days: ['Monday', 'Tuesday', 'Friday', 'Saturday'],
+  day_schedules: {
+    Monday: { enabled: true, start: '18:00', end: '21:00' },
+    Tuesday: { enabled: true, start: '18:00', end: '21:00' },
+    Wednesday: { enabled: true, start: '18:00', end: '21:00' },
+    Thursday: { enabled: true, start: '18:00', end: '21:00' },
+    Friday: { enabled: true, start: '18:00', end: '21:00' },
+    Saturday: { enabled: true, start: '10:00', end: '13:00' },
+    Sunday: { enabled: false, start: '14:00', end: '17:00' }
+  },
+  study_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
   preferred_start: '18:00',
   preferred_end: '21:00',
   session_length: 50,
@@ -286,6 +295,92 @@ window.StudyGPS = {
     }
   },
 
+  // --- Time Utilities & Converters ---
+  formatTime24to12: function(timeStr) {
+    if (!timeStr) return '6:00 PM';
+    if (timeStr === '─────') return '─────';
+    if (timeStr.includes('AM') || timeStr.includes('PM')) return timeStr;
+    const parts = timeStr.split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parts[1] !== undefined ? parseInt(parts[1], 10) : 0;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayH = h % 12 || 12;
+    const displayM = String(m).padStart(2, '0');
+    return `${displayH}:${displayM} ${ampm}`;
+  },
+
+  formatTime24toShort: function(timeStr) {
+    if (!timeStr) return '6:00';
+    if (timeStr === '─────') return '─────';
+    if (timeStr.includes('AM') || timeStr.includes('PM')) {
+      return timeStr.replace(/\s*(AM|PM)/i, '').trim();
+    }
+    const parts = timeStr.split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parts[1] !== undefined ? parseInt(parts[1], 10) : 0;
+    const displayH = h % 12 || 12;
+    const displayM = String(m).padStart(2, '0');
+    return m === 0 ? `${displayH}:00` : `${displayH}:${displayM}`;
+  },
+
+  timeToMinutes: function(timeStr) {
+    if (!timeStr) return 18 * 60;
+    if (timeStr.includes('AM') || timeStr.includes('PM')) {
+      const isPM = /PM/i.test(timeStr);
+      const clean = timeStr.replace(/\s*(AM|PM)/i, '').trim();
+      const parts = clean.split(':');
+      let h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (isPM && h < 12) h += 12;
+      if (!isPM && h === 12) h = 0;
+      return h * 60 + m;
+    }
+    const parts = timeStr.split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    return h * 60 + m;
+  },
+
+  minutesToTime24: function(totalMinutes) {
+    const norm = (totalMinutes % (24 * 60) + (24 * 60)) % (24 * 60);
+    const h = Math.floor(norm / 60);
+    const m = norm % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  },
+
+  splitTime24to12: function(time24) {
+    if (!time24) return { hour: 6, minute: 0, ampm: 'PM' };
+    let mins = this.timeToMinutes(time24);
+    let h24 = Math.floor(mins / 60) % 24;
+    let m = mins % 60;
+    let ampm = h24 >= 12 ? 'PM' : 'AM';
+    let h12 = h24 % 12 || 12;
+    return { hour: h12, minute: m, ampm: ampm };
+  },
+
+  join12toTime24: function(hour12, minute, ampm) {
+    let h = parseInt(hour12, 10) || 12;
+    let m = parseInt(minute, 10) || 0;
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  },
+
+  calcDurationText: function(startStr, endStr) {
+    const startMins = this.timeToMinutes(startStr);
+    let endMins = this.timeToMinutes(endStr);
+    if (endMins < startMins) {
+      endMins += 24 * 60; // Next day
+    }
+    const diff = endMins - startMins;
+    const hrs = Math.floor(diff / 60);
+    const mins = diff % 60;
+    if (diff <= 0) return '0 mins';
+    if (mins === 0) return `${hrs} hr${hrs === 1 ? '' : 's'}`;
+    if (hrs === 0) return `${mins} mins`;
+    return `${hrs}h ${mins}m`;
+  },
+
   // --- Auth & User Info ---
   getUser: function() {
     return this._get(STORAGE_KEYS.USER, {
@@ -306,7 +401,29 @@ window.StudyGPS = {
 
   // --- User Preferences (Interview) ---
   getPreferences: function() {
-    return this._get(STORAGE_KEYS.PREFERENCES, DEFAULT_PREFERENCES);
+    const raw = this._get(STORAGE_KEYS.PREFERENCES, DEFAULT_PREFERENCES);
+    // Ensure all 7 day schedules exist
+    const defaultDays = DEFAULT_PREFERENCES.day_schedules;
+    const day_schedules = { ...defaultDays, ...(raw.day_schedules || {}) };
+    
+    // Normalize if older format
+    if (raw.study_days && Array.isArray(raw.study_days)) {
+      ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].forEach(d => {
+        if (!day_schedules[d]) {
+          day_schedules[d] = {
+            enabled: raw.study_days.includes(d),
+            start: raw.preferred_start || '18:00',
+            end: raw.preferred_end || '21:00'
+          };
+        }
+      });
+    }
+
+    return {
+      ...DEFAULT_PREFERENCES,
+      ...raw,
+      day_schedules
+    };
   },
 
   savePreferences: function(prefs) {
@@ -314,6 +431,7 @@ window.StudyGPS = {
     const merged = { ...current, ...prefs, interview_completed: true };
     this._set(STORAGE_KEYS.PREFERENCES, merged);
     this.generateSchedule(); // Auto-recalc schedule based on new study prefs
+    this.generateWeeklySchedule(0);
     return merged;
   },
 
@@ -458,6 +576,9 @@ window.StudyGPS = {
     const prefs = this.getPreferences();
     const tasks = this.getTasks();
     const courses = this.getCourses();
+    const daySchedules = prefs.day_schedules || {};
+    const sessionLength = prefs.session_length || 50;
+    const breakLength = prefs.break_length || 10;
 
     // Compute base dates (Centered around current mock date Aug 26, 2026 -> Mon Aug 24)
     const baseMonday = new Date(2026, 7, 24 + weekOffset * 7); // Month is 0-indexed (7 = Aug)
@@ -469,8 +590,13 @@ window.StudyGPS = {
     const endStr = `${monthNames[baseSunday.getMonth()]} ${baseSunday.getDate()}`;
     const weekLabel = `${startStr} – ${endStr}`;
 
-    const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-    const startTimes = ['6:00', '7:00'];
+    const dayNameMap = [
+      { short: 'MON', full: 'Monday' },
+      { short: 'TUE', full: 'Tuesday' },
+      { short: 'WED', full: 'Wednesday' },
+      { short: 'THU', full: 'Thursday' },
+      { short: 'FRI', full: 'Friday' }
+    ];
 
     // Collect available subjects / modules to distribute
     const subjectPool = [
@@ -488,10 +614,50 @@ window.StudyGPS = {
 
     let poolIndex = (Math.abs(weekOffset) * 3) % subjectPool.length;
 
-    const days = dayNames.map((dName, idx) => {
+    const days = dayNameMap.map((dObj, idx) => {
       const curDate = new Date(baseMonday);
       curDate.setDate(baseMonday.getDate() + idx);
-      const isToday = weekOffset === 0 && dName === 'WED';
+      const isToday = weekOffset === 0 && dObj.short === 'WED';
+      const dayPref = daySchedules[dObj.full] || { enabled: true, start: '18:00', end: '21:00' };
+
+      if (!dayPref.enabled) {
+        return {
+          dayName: dObj.short,
+          fullDayName: dObj.full,
+          dateStr: `${monthNames[curDate.getMonth()]} ${curDate.getDate()}`,
+          isToday: isToday,
+          isRestDay: true,
+          slots: [
+            {
+              id: (weekOffset + 10) * 100 + idx * 2 + 1,
+              time: '─────',
+              title: '─────',
+              course_name: 'Rest Day (No Study)',
+              course_code: 'Rest',
+              pages: '',
+              duration_minutes: 0,
+              color: 'slate',
+              isFree: true
+            },
+            {
+              id: (weekOffset + 10) * 100 + idx * 2 + 2,
+              time: '─────',
+              title: '─────',
+              course_name: 'Rest Day (No Study)',
+              course_code: 'Rest',
+              pages: '',
+              duration_minutes: 0,
+              color: 'slate',
+              isFree: true
+            }
+          ]
+        };
+      }
+
+      const startMinutes = StudyGPS.timeToMinutes(dayPref.start || '18:00');
+      const time1 = StudyGPS.formatTime24toShort(dayPref.start || '18:00');
+      const slot2Minutes = startMinutes + sessionLength + breakLength;
+      const time2 = StudyGPS.formatTime24toShort(StudyGPS.minutesToTime24(slot2Minutes));
 
       const s1 = subjectPool[poolIndex % subjectPool.length];
       poolIndex++;
@@ -499,31 +665,35 @@ window.StudyGPS = {
       poolIndex++;
 
       return {
-        dayName: dName,
+        dayName: dObj.short,
+        fullDayName: dObj.full,
         dateStr: `${monthNames[curDate.getMonth()]} ${curDate.getDate()}`,
         isToday: isToday,
+        isRestDay: false,
+        startTimeFormatted: StudyGPS.formatTime24to12(dayPref.start),
+        endTimeFormatted: StudyGPS.formatTime24to12(dayPref.end),
         slots: [
           {
             id: (weekOffset + 10) * 100 + idx * 2 + 1,
-            time: '6:00',
+            time: time1,
             task_id: s1.task_id,
             title: s1.title,
             course_name: s1.course_name,
             course_code: s1.course_code,
             pages: s1.pages,
-            duration_minutes: 50,
+            duration_minutes: sessionLength,
             color: s1.color,
             isFree: !!s1.isFree
           },
           {
             id: (weekOffset + 10) * 100 + idx * 2 + 2,
-            time: dName === 'WED' ? '6:50' : '7:00',
+            time: time2,
             task_id: s2.task_id,
             title: s2.title,
             course_name: s2.course_name,
             course_code: s2.course_code,
             pages: s2.pages,
-            duration_minutes: 50,
+            duration_minutes: sessionLength,
             color: s2.color,
             isFree: !!s2.isFree
           }
@@ -546,21 +716,21 @@ window.StudyGPS = {
   generateSchedule: function() {
     const prefs = this.getPreferences();
     const tasks = this.getTasks().filter(t => t.status !== 'Completed');
-    const startTimeStr = prefs.preferred_start || '18:00';
-    const [startH, startM] = startTimeStr.split(':').map(Number);
+    
+    // Check today's day schedule
+    const daysMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayName = daysMap[new Date().getDay()] || 'Wednesday';
+    const dayPref = (prefs.day_schedules && prefs.day_schedules[todayName]) || { start: prefs.preferred_start || '18:00' };
+
+    const startTimeStr = dayPref.start || prefs.preferred_start || '18:00';
+    let currentMinutes = StudyGPS.timeToMinutes(startTimeStr);
     const sessionLength = prefs.session_length || 50;
     const breakLength = prefs.break_length || 10;
 
-    let currentMinutes = startH * 60 + (startM || 0);
     const newSchedule = [];
 
     const formatTime = (totalMins) => {
-      const h = Math.floor(totalMins / 60);
-      const m = totalMins % 60;
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const displayH = h % 12 || 12;
-      const displayM = String(m).padStart(2, '0');
-      return `${displayH}:${displayM} ${ampm}`;
+      return StudyGPS.formatTime24to12(StudyGPS.minutesToTime24(totalMins));
     };
 
     const studyTasks = tasks.slice(0, 3);

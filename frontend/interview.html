@@ -3,100 +3,75 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StudyGPS — Study Preference Interview</title>
+  <title>StudyGPS — Study Preferences</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans text-slate-900">
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 sm:p-6 font-sans text-slate-900">
 
-  <div class="w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-8 sm:p-10 shadow-sm">
+  <div class="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-6 sm:p-9 shadow-sm">
     
     <!-- Top Header -->
-    <div class="flex items-center justify-between pb-6 mb-6 border-b border-slate-100">
+    <div class="flex items-center justify-between pb-5 mb-5 border-b border-slate-100">
       <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+        <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
           🧭
         </div>
-        <span class="font-bold text-slate-900 text-base">StudyGPS</span>
+        <div>
+          <span class="font-bold text-slate-900 text-base block leading-none">StudyGPS</span>
+          <span class="text-[11px] text-slate-400 font-medium">Daily Routine Calibration</span>
+        </div>
       </div>
-      <span id="stepIndicator" class="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-        Step 1 of 2
+      <span id="stepIndicator" class="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+        Step 1 of 2: Day & Time Preferences
       </span>
     </div>
 
-    <!-- PAGE 1: Study Days & Time Range -->
+    <!-- PAGE 1: Study Days & Time Range Per Day (AM/PM Supported) -->
     <div id="page1" class="space-y-6">
       <div>
-        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Let's personalize your study experience</h1>
-        <p class="text-xs text-slate-500 mt-1">Tell us your routine so StudyGPS can construct your optimal daily study schedule.</p>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Set Your Daily Study Schedule</h1>
+        <p class="text-xs text-slate-500 mt-1">
+          Customize your study times for each day of the week. You can set any start and end time in AM or PM.
+        </p>
       </div>
 
-      <!-- Days of Week Checkboxes -->
-      <div class="space-y-3">
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">When do you usually study?</label>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Monday" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Monday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Tuesday" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Tuesday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Wednesday" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Wednesday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Thursday" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Thursday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Friday" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Friday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition">
-            <input type="checkbox" name="study_days" value="Saturday" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Saturday</span>
-          </label>
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 transition sm:col-span-3">
-            <input type="checkbox" name="study_days" value="Sunday" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-            <span class="text-xs font-semibold text-slate-700">Sunday</span>
-          </label>
+      <!-- Quick Presets -->
+      <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">⚡ Quick Schedule Presets</span>
+          <button type="button" onclick="copyMondayToAll()" class="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline">
+            Copy Mon to All Days
+          </button>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button type="button" onclick="applyPreset('evening')" class="px-2.5 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            🌙 Evening (6 – 9 PM)
+          </button>
+          <button type="button" onclick="applyPreset('morning')" class="px-2.5 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            ☀️ Morning (8 – 11 AM)
+          </button>
+          <button type="button" onclick="applyPreset('afternoon')" class="px-2.5 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            🌤️ Afternoon (1 – 4 PM)
+          </button>
+          <button type="button" onclick="applyPreset('weekdays')" class="px-2.5 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-semibold text-slate-700 hover:text-blue-700 transition text-left">
+            📅 Weekdays Only
+          </button>
         </div>
       </div>
 
-      <!-- Preferred Study Time -->
-      <div class="space-y-3">
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Preferred study time</label>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <span class="text-[11px] text-slate-500 font-medium block mb-1">Start Time</span>
-            <select id="prefStart" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="16:00">4:00 PM</option>
-              <option value="17:00">5:00 PM</option>
-              <option value="18:00" selected>6:00 PM</option>
-              <option value="19:00">7:00 PM</option>
-              <option value="20:00">8:00 PM</option>
-            </select>
-          </div>
-          <div>
-            <span class="text-[11px] text-slate-500 font-medium block mb-1">End Time</span>
-            <select id="prefEnd" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="19:00">7:00 PM</option>
-              <option value="20:00">8:00 PM</option>
-              <option value="21:00" selected>9:00 PM</option>
-              <option value="22:00">10:00 PM</option>
-              <option value="23:00">11:00 PM</option>
-            </select>
-          </div>
-        </div>
+      <!-- DAY-BY-DAY SCHEDULE LIST (Monday - Sunday) -->
+      <div class="space-y-2.5" id="daySchedulesContainer">
+        <!-- Javascript will populate day rows with toggles and AM/PM time inputs -->
       </div>
 
       <!-- Action -->
-      <div class="pt-4">
-        <button type="button" onclick="goToStep(2)" class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition flex items-center justify-center gap-2">
-          Continue &rarr;
+      <div class="pt-3 flex items-center justify-between gap-3">
+        <a href="dashboard.html" class="text-xs font-semibold text-slate-400 hover:text-slate-600">
+          Skip to Dashboard
+        </a>
+        <button type="button" onclick="goToStep(2)" class="py-2.5 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ml-auto">
+          <span>Continue to Session Settings</span> &rarr;
         </button>
       </div>
     </div>
@@ -104,42 +79,42 @@
     <!-- PAGE 2: Session Length, Break, Max Minutes -->
     <div id="page2" class="space-y-6 hidden">
       <div>
-        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Study Session & Break Length</h1>
-        <p class="text-xs text-slate-500 mt-1">Configure focus intervals and pacing parameters.</p>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Session Length & Focus Intervals</h1>
+        <p class="text-xs text-slate-500 mt-1">Configure your focus sessions and break duration pacing.</p>
       </div>
 
       <!-- Session Length -->
       <div class="space-y-2.5">
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">How long should each study session be?</label>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Study Session Block Duration</label>
         <div class="grid grid-cols-3 gap-2.5">
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="session_length" value="25" class="sr-only">
-            <span class="text-xs font-bold">25 min</span>
+            <span class="text-xs font-bold">25 min (Pomodoro)</span>
           </label>
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="session_length" value="50" checked class="sr-only">
-            <span class="text-xs font-bold">50 min</span>
+            <span class="text-xs font-bold">50 min (Standard)</span>
           </label>
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="session_length" value="90" class="sr-only">
-            <span class="text-xs font-bold">90 min</span>
+            <span class="text-xs font-bold">90 min (Deep Work)</span>
           </label>
         </div>
       </div>
 
       <!-- Break Length -->
       <div class="space-y-2.5">
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Break length</label>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Rest / Break Interval</label>
         <div class="grid grid-cols-3 gap-2.5">
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="break_length" value="5" class="sr-only">
             <span class="text-xs font-bold">5 min</span>
           </label>
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="break_length" value="10" checked class="sr-only">
             <span class="text-xs font-bold">10 min</span>
           </label>
-          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50/50 has-[:checked]:text-blue-700 transition">
+          <label class="flex items-center justify-center p-3 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer bg-slate-50/50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 transition">
             <input type="radio" name="break_length" value="15" class="sr-only">
             <span class="text-xs font-bold">15 min</span>
           </label>
@@ -148,23 +123,24 @@
 
       <!-- Max Study Time Per Day -->
       <div class="space-y-2">
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Maximum study time per day</label>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Maximum Study Limit Per Day</label>
         <select id="maxDailyMins" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="60">60 minutes (1 hour)</option>
           <option value="90">90 minutes (1.5 hours)</option>
           <option value="120" selected>120 minutes (2 hours)</option>
           <option value="180">180 minutes (3 hours)</option>
           <option value="240">240 minutes (4 hours)</option>
+          <option value="360">360 minutes (6 hours)</option>
         </select>
       </div>
 
       <!-- Actions -->
       <div class="pt-4 flex items-center gap-3">
-        <button type="button" onclick="goToStep(1)" class="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition">
+        <button type="button" onclick="goToStep(1)" class="w-1/3 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition">
           &larr; Back
         </button>
-        <button type="button" onclick="finishInterview()" class="w-2/3 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition flex items-center justify-center gap-2">
-          Finish &rarr; Dashboard
+        <button type="button" onclick="finishInterview()" class="w-2/3 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center justify-center gap-2">
+          <span>Save Preferences & Open Dashboard</span> &rarr;
         </button>
       </div>
     </div>
@@ -173,37 +149,293 @@
 
   <script src="app-store.js"></script>
   <script>
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const MINUTES_LIST = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    let currentPrefs = {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+      currentPrefs = StudyGPS.getPreferences();
+      renderDaysList();
+      initStep2Fields();
+    });
+
+    function renderDaysList() {
+      const container = document.getElementById('daySchedulesContainer');
+      container.innerHTML = '';
+
+      const daySchedules = currentPrefs.day_schedules || {};
+
+      DAYS.forEach(day => {
+        const schedule = daySchedules[day] || { enabled: true, start: '18:00', end: '21:00' };
+        const isEnabled = schedule.enabled !== false;
+        const startParts = StudyGPS.splitTime24to12(schedule.start || '18:00');
+        const endParts = StudyGPS.splitTime24to12(schedule.end || '21:00');
+        const durationText = StudyGPS.calcDurationText(schedule.start || '18:00', schedule.end || '21:00');
+
+        const row = document.createElement('div');
+        row.id = `dayRow_${day}`;
+        row.className = `p-3.5 sm:p-4 rounded-2xl border transition ${isEnabled ? 'bg-white border-slate-200 shadow-xs' : 'bg-slate-50/70 border-slate-200/60 opacity-60'}`;
+        
+        row.innerHTML = `
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+            <!-- Day Name & Toggle -->
+            <div class="flex items-center justify-between lg:justify-start gap-3 min-w-[140px]">
+              <div class="flex items-center gap-2.5">
+                <input type="checkbox" id="check_${day}" ${isEnabled ? 'checked' : ''} onchange="toggleDay('${day}', this.checked)" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer">
+                <label for="check_${day}" class="text-xs font-bold text-slate-900 cursor-pointer select-none">
+                  ${day}
+                </label>
+              </div>
+              <span id="statusBadge_${day}" class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${isEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-200 text-slate-600'}">
+                ${isEnabled ? 'Active' : 'Off'}
+              </span>
+            </div>
+
+            <!-- Custom AM/PM Time Pickers -->
+            <div id="timesContainer_${day}" class="flex items-center gap-2 sm:gap-3 flex-wrap ${isEnabled ? '' : 'pointer-events-none opacity-40'}">
+              
+              <!-- START TIME GROUP -->
+              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1 shadow-xs">
+                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">Start</span>
+                <!-- Hour -->
+                <select id="startH_${day}" onchange="updateDayCustomTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === startParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
+                </select>
+                <span class="text-slate-400 font-bold text-xs">:</span>
+                <!-- Minute -->
+                <select id="startM_${day}" onchange="updateDayCustomTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                  ${MINUTES_LIST.map(m => `<option value="${m}" ${m === startParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
+                </select>
+                <!-- AM/PM Toggle Buttons -->
+                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
+                  <button type="button" id="startAM_${day}" onclick="setAmPm('${day}', 'start', 'AM')" class="px-1.5 py-0.5 text-[10px] font-bold rounded-md transition ${startParts.ampm === 'AM' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                    AM
+                  </button>
+                  <button type="button" id="startPM_${day}" onclick="setAmPm('${day}', 'start', 'PM')" class="px-1.5 py-0.5 text-[10px] font-bold rounded-md transition ${startParts.ampm === 'PM' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                    PM
+                  </button>
+                </div>
+              </div>
+
+              <span class="text-slate-400 text-xs font-bold hidden sm:inline">→</span>
+
+              <!-- END TIME GROUP -->
+              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1 shadow-xs">
+                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">End</span>
+                <!-- Hour -->
+                <select id="endH_${day}" onchange="updateDayCustomTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === endParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
+                </select>
+                <span class="text-slate-400 font-bold text-xs">:</span>
+                <!-- Minute -->
+                <select id="endM_${day}" onchange="updateDayCustomTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                  ${MINUTES_LIST.map(m => `<option value="${m}" ${m === endParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
+                </select>
+                <!-- AM/PM Toggle Buttons -->
+                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
+                  <button type="button" id="endAM_${day}" onclick="setAmPm('${day}', 'end', 'AM')" class="px-1.5 py-0.5 text-[10px] font-bold rounded-md transition ${endParts.ampm === 'AM' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                    AM
+                  </button>
+                  <button type="button" id="endPM_${day}" onclick="setAmPm('${day}', 'end', 'PM')" class="px-1.5 py-0.5 text-[10px] font-bold rounded-md transition ${endParts.ampm === 'PM' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                    PM
+                  </button>
+                </div>
+              </div>
+
+              <!-- Duration & Quick Copy -->
+              <div class="flex items-center gap-1.5 ml-auto sm:ml-0">
+                <span id="durBadge_${day}" class="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded-lg">
+                  ${durationText}
+                </span>
+                <button type="button" onclick="copyThisDayToAll('${day}')" title="Copy this day's start & end time to all active days" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition text-xs font-bold">
+                  📋
+                </button>
+              </div>
+
+            </div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function getDayAmPm(day, type) {
+      const amBtn = document.getElementById(`${type}AM_${day}`);
+      return amBtn && amBtn.classList.contains('bg-blue-600') ? 'AM' : 'PM';
+    }
+
+    function setAmPm(day, type, ampm) {
+      const amBtn = document.getElementById(`${type}AM_${day}`);
+      const pmBtn = document.getElementById(`${type}PM_${day}`);
+      if (!amBtn || !pmBtn) return;
+
+      if (ampm === 'AM') {
+        amBtn.className = 'px-1.5 py-0.5 text-[10px] font-bold rounded-md transition bg-blue-600 text-white shadow-xs';
+        pmBtn.className = 'px-1.5 py-0.5 text-[10px] font-bold rounded-md transition text-slate-600 hover:text-slate-900';
+      } else {
+        pmBtn.className = 'px-1.5 py-0.5 text-[10px] font-bold rounded-md transition bg-blue-600 text-white shadow-xs';
+        amBtn.className = 'px-1.5 py-0.5 text-[10px] font-bold rounded-md transition text-slate-600 hover:text-slate-900';
+      }
+
+      updateDayCustomTime(day);
+    }
+
+    function updateDayCustomTime(day) {
+      const startH = document.getElementById(`startH_${day}`)?.value || 6;
+      const startM = document.getElementById(`startM_${day}`)?.value || 0;
+      const startAmPm = getDayAmPm(day, 'start');
+
+      const endH = document.getElementById(`endH_${day}`)?.value || 9;
+      const endM = document.getElementById(`endM_${day}`)?.value || 0;
+      const endAmPm = getDayAmPm(day, 'end');
+
+      const start24 = StudyGPS.join12toTime24(startH, startM, startAmPm);
+      const end24 = StudyGPS.join12toTime24(endH, endM, endAmPm);
+
+      if (!currentPrefs.day_schedules) currentPrefs.day_schedules = {};
+      const isEnabled = document.getElementById(`check_${day}`)?.checked ?? true;
+      currentPrefs.day_schedules[day] = {
+        enabled: isEnabled,
+        start: start24,
+        end: end24
+      };
+
+      const durBadge = document.getElementById(`durBadge_${day}`);
+      if (durBadge) {
+        durBadge.textContent = StudyGPS.calcDurationText(start24, end24);
+      }
+    }
+
+    function toggleDay(day, isEnabled) {
+      if (!currentPrefs.day_schedules) currentPrefs.day_schedules = {};
+      if (!currentPrefs.day_schedules[day]) {
+        currentPrefs.day_schedules[day] = { enabled: isEnabled, start: '18:00', end: '21:00' };
+      } else {
+        currentPrefs.day_schedules[day].enabled = isEnabled;
+      }
+
+      const row = document.getElementById(`dayRow_${day}`);
+      const timesCont = document.getElementById(`timesContainer_${day}`);
+      const badge = document.getElementById(`statusBadge_${day}`);
+
+      if (isEnabled) {
+        row.className = 'p-3.5 sm:p-4 rounded-2xl border transition bg-white border-slate-200 shadow-xs';
+        timesCont.classList.remove('pointer-events-none', 'opacity-40');
+        badge.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100';
+        badge.textContent = 'Active';
+      } else {
+        row.className = 'p-3.5 sm:p-4 rounded-2xl border transition bg-slate-50/70 border-slate-200/60 opacity-60';
+        timesCont.classList.add('pointer-events-none', 'opacity-40');
+        badge.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600';
+        badge.textContent = 'Off';
+      }
+    }
+
+    function copyThisDayToAll(sourceDay) {
+      const sourceSchedule = currentPrefs.day_schedules?.[sourceDay] || { start: '18:00', end: '21:00' };
+      DAYS.forEach(day => {
+        if (!currentPrefs.day_schedules) currentPrefs.day_schedules = {};
+        const isCurrentEnabled = currentPrefs.day_schedules[day]?.enabled !== false;
+        currentPrefs.day_schedules[day] = {
+          enabled: isCurrentEnabled,
+          start: sourceSchedule.start,
+          end: sourceSchedule.end
+        };
+      });
+      renderDaysList();
+    }
+
+    function applyPreset(type) {
+      DAYS.forEach(day => {
+        if (!currentPrefs.day_schedules) currentPrefs.day_schedules = {};
+        if (type === 'evening') {
+          currentPrefs.day_schedules[day] = { enabled: true, start: '18:00', end: '21:00' };
+        } else if (type === 'morning') {
+          currentPrefs.day_schedules[day] = { enabled: true, start: '08:00', end: '11:30' };
+        } else if (type === 'afternoon') {
+          currentPrefs.day_schedules[day] = { enabled: true, start: '13:00', end: '16:30' };
+        } else if (type === 'weekdays') {
+          const isWeekday = day !== 'Saturday' && day !== 'Sunday';
+          currentPrefs.day_schedules[day] = {
+            enabled: isWeekday,
+            start: isWeekday ? '18:00' : '10:00',
+            end: isWeekday ? '21:00' : '13:00'
+          };
+        }
+      });
+      renderDaysList();
+    }
+
+    function copyMondayToAll() {
+      copyThisDayToAll('Monday');
+    }
+
+    function initStep2Fields() {
+      if (currentPrefs.session_length) {
+        const rad = document.querySelector(`input[name="session_length"][value="${currentPrefs.session_length}"]`);
+        if (rad) rad.checked = true;
+      }
+      if (currentPrefs.break_length) {
+        const rad = document.querySelector(`input[name="break_length"][value="${currentPrefs.break_length}"]`);
+        if (rad) rad.checked = true;
+      }
+      if (currentPrefs.max_daily_minutes) {
+        const sel = document.getElementById('maxDailyMins');
+        if (sel) sel.value = String(currentPrefs.max_daily_minutes);
+      }
+    }
+
     function goToStep(step) {
       if (step === 1) {
         document.getElementById('page1').classList.remove('hidden');
         document.getElementById('page2').classList.add('hidden');
-        document.getElementById('stepIndicator').textContent = 'Step 1 of 2';
+        document.getElementById('stepIndicator').textContent = 'Step 1 of 2: Day & Time Preferences';
       } else {
         document.getElementById('page1').classList.add('hidden');
         document.getElementById('page2').classList.remove('hidden');
-        document.getElementById('stepIndicator').textContent = 'Step 2 of 2';
+        document.getElementById('stepIndicator').textContent = 'Step 2 of 2: Session & Break Length';
       }
     }
 
     function finishInterview() {
-      // Collect selected days
-      const days = [];
-      document.querySelectorAll('input[name="study_days"]:checked').forEach(cb => {
-        days.push(cb.value);
+      // Gather active study days and individual schedules
+      const activeDays = [];
+      const daySchedules = {};
+
+      DAYS.forEach(day => {
+        const isChecked = document.getElementById(`check_${day}`)?.checked ?? true;
+        const startH = document.getElementById(`startH_${day}`)?.value || 6;
+        const startM = document.getElementById(`startM_${day}`)?.value || 0;
+        const startAmPm = getDayAmPm(day, 'start');
+
+        const endH = document.getElementById(`endH_${day}`)?.value || 9;
+        const endM = document.getElementById(`endM_${day}`)?.value || 0;
+        const endAmPm = getDayAmPm(day, 'end');
+
+        const start24 = StudyGPS.join12toTime24(startH, startM, startAmPm);
+        const end24 = StudyGPS.join12toTime24(endH, endM, endAmPm);
+
+        if (isChecked) {
+          activeDays.push(day);
+        }
+
+        daySchedules[day] = {
+          enabled: isChecked,
+          start: start24,
+          end: end24
+        };
       });
 
-      const prefStart = document.getElementById('prefStart').value;
-      const prefEnd = document.getElementById('prefEnd').value;
-      
-      const sessionLen = document.querySelector('input[name="session_length"]:checked').value;
-      const breakLen = document.querySelector('input[name="break_length"]:checked').value;
-      const maxDaily = document.getElementById('maxDailyMins').value;
+      const sessionLen = document.querySelector('input[name="session_length"]:checked')?.value || 50;
+      const breakLen = document.querySelector('input[name="break_length"]:checked')?.value || 10;
+      const maxDaily = document.getElementById('maxDailyMins')?.value || 120;
 
       // Save preferences to store
       StudyGPS.savePreferences({
-        study_days: days,
-        preferred_start: prefStart,
-        preferred_end: prefEnd,
+        day_schedules: daySchedules,
+        study_days: activeDays,
+        preferred_start: daySchedules['Monday']?.start || '18:00',
+        preferred_end: daySchedules['Monday']?.end || '21:00',
         session_length: Number(sessionLen),
         break_length: Number(breakLen),
         max_daily_minutes: Number(maxDaily)
