@@ -1,4 +1,13 @@
 const express = require('express');
+const cors = require('cors');
+
+const app = express();
+const PORT = 3000;
+
+
+app.use(cors());
+
+
 const path = require('path');
 const session = require('express-session');
 const passport = require('passport');
@@ -6,8 +15,6 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
 
-const app = express();
-const PORT = 3000;
 
 const frontendPath = path.join(__dirname, 'frontend');
 

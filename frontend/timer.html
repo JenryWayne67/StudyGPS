@@ -283,7 +283,7 @@
     console.log("Actual minutes:", actualMinutes);
 
     try {
-      const response = await fetch('/api/study-sessions', {
+      const response = await fetch('http://localhost:3000/api/study-sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -291,7 +291,7 @@
         body: JSON.stringify({
           task_id: currentTaskId,
           planned_minutes: plannedMinutes,
-          actual_minutes: actualMinutes,
+          actual_seconds: elapsedSeconds,
           start_time: null,
           end_time: new Date().toISOString(),
           completed: 1
