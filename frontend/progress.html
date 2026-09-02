@@ -272,21 +272,62 @@
     </a>
   </nav>
 
-  <script src="app-store.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      // Check for session completion query param
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('session_completed')) {
-        document.getElementById('sessionToast').classList.remove('hidden');
+  async function loadProgressFromDatabase() {
+    try {
+      const response = await fetch('/api/study-sessions');
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load study sessions');
       }
 
-      // Sync stats from state
-      const progress = StudyGPS.getProgress();
-      document.getElementById('progTasks').textContent = `${progress.tasksCompleted} / ${progress.totalTasks}`;
-      document.getElementById('progStudied').textContent = progress.studiedDisplay;
-      document.getElementById('progCompletion').textContent = `${progress.completionRate}%`;
-    });
-  </script>
-</body>
-</html>
+      console.log('Study sessions from SQLite:', data.sessions);
+
+      const sessions = data.sessions;
+
+      // Calculate completed sessions
+      const completedSessions = sessions.filter(
+        session => Number(session.completed) === 1
+      );
+
+      // Calculate total actual study time
+      const totalMinutes = sessions.reduce(
+        (total, session) => total + (Number(session.actual_minutes) || 0),
+        0
+      );
+
+      // Calculate completion rate
+      const completionRate = sessions.length > 0
+        ? Math.round((completedSessions.length / sessions.length) * 100)
+        : 0;
+
+      // Update the Progress page
+      document.getElementById('progTasks').textContent =
+        `${completedSessions.length} / ${sessions.length}`;
+
+      document.getElementById('progStudied').textContent =
+        `${totalMinutes} min`;
+
+      document.getElementById('progCompletion').textContent =
+        `${completionRate}%`;
+
+    } catch (error) {
+      console.error('Failed to load progress from database:', error);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+
+    // Check for session completion query param
+    const urlParams = new URLSearchParams(window.location.search);
+
+    if (urlParams.get('session_completed')) {
+      document.getElementById('sessionToast').classList.remove('hidden');
+    }
+
+    // Load REAL data from SQLite
+    loadProgressFromDatabase();
+  });
+</script>
