@@ -117,10 +117,10 @@
 
         <!-- Timer Control Action Buttons -->
         <div class="flex items-center justify-center gap-3 mb-8">
-          <button id="btnStart" onclick="startTimer()" class="hidden py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-bold shadow-md shadow-blue-500/20 transition flex items-center gap-2">
+          <button id="btnStart" onclick="startTimer()" class="py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-bold shadow-md shadow-blue-500/20 transition flex items-center gap-2">
             <span>▶</span> Start
           </button>
-          <button id="btnPause" onclick="pauseTimer()" class="py-3 px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-sm font-bold transition flex items-center gap-2">
+          <button id="btnPause" onclick="pauseTimer()" class="hidden py-3 px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-sm font-bold transition flex items-center gap-2">
             <span>⏸</span> Pause
           </button>
           <button id="btnResume" onclick="resumeTimer()" class="hidden py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-bold transition flex items-center gap-2">
@@ -142,103 +142,195 @@
   </div>
 
   <script src="app-store.js"></script>
-  <script>
-    let currentTaskId = 15;
-    let plannedMinutes = 50;
-    let totalSeconds = 50 * 60;
-    let remainingSeconds = 42 * 60 + 31; // Initial state at 42:31 per diagram
-    let timerInterval = null;
-    let isRunning = true;
-    const circumference = 2 * Math.PI * 44; // ~276.46
+<script>
+  let currentTaskId = 1;
+  let plannedMinutes = 50;
+  let totalSeconds = 50 * 60;
+  let remainingSeconds = 50 * 60;
+  let timerInterval = null;
+  let isRunning = false;
 
-    function getQueryParam(name) {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(name);
+  const circumference = 2 * Math.PI * 44;
+
+  function getQueryParam(name) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(name);
+  }
+
+  function initTask() {
+    const paramId = getQueryParam('task_id');
+
+    if (paramId) {
+      currentTaskId = Number(paramId);
     }
 
-    function initTask() {
-      const paramId = getQueryParam('task_id');
-      if (paramId) {
-        currentTaskId = Number(paramId);
+    const task = StudyGPS.getTaskById(currentTaskId);
+
+    if (task) {
+      document.getElementById('taskTitle').textContent = task.title;
+      document.getElementById('taskCourse').textContent = task.course_name;
+      document.getElementById('taskPages').textContent = task.pages;
+
+      plannedMinutes = task.estimated_minutes || 50;
+      totalSeconds = plannedMinutes * 60;
+      remainingSeconds = totalSeconds;
+
+      document.getElementById('plannedMeta').textContent =
+        `Planned: ${plannedMinutes} minutes`;
+
+      document.getElementById('taskIdMeta').textContent =
+        `Task ID: #${task.id}`;
+    }
+
+    updateDisplay();
+
+    // Timer starts only when user clicks Start
+    isRunning = false;
+  }
+
+  function updateDisplay() {
+    const m = Math.floor(remainingSeconds / 60);
+    const s = remainingSeconds % 60;
+
+    document.getElementById('timeDisplay').textContent =
+      `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+    const progressFraction =
+      (totalSeconds - remainingSeconds) / totalSeconds;
+
+    const offset =
+      circumference * (1 - progressFraction);
+
+    document.getElementById('timerRing').style.strokeDashoffset =
+      Math.max(0, offset);
+  }
+
+  function startInterval() {
+    clearInterval(timerInterval);
+
+    timerInterval = setInterval(() => {
+
+      if (!isRunning) {
+        return;
       }
 
-      const task = StudyGPS.getTaskById(currentTaskId);
-      if (task) {
-        document.getElementById('taskTitle').textContent = task.title;
-        document.getElementById('taskCourse').textContent = task.course_name;
-        document.getElementById('taskPages').textContent = task.pages;
-        plannedMinutes = task.estimated_minutes || 50;
-        totalSeconds = plannedMinutes * 60;
-        remainingSeconds = Math.min(totalSeconds, 42 * 60 + 31);
-        document.getElementById('plannedMeta').textContent = `Planned: ${plannedMinutes} minutes`;
-        document.getElementById('taskIdMeta').textContent = `Task ID: #${task.id}`;
+      if (remainingSeconds > 0) {
+        remainingSeconds--;
+        updateDisplay();
+      } else {
+        clearInterval(timerInterval);
+        isRunning = false;
+        finishTimer();
       }
 
-      updateDisplay();
-      startInterval();
+    }, 1000);
+  }
+
+  function startTimer() {
+    isRunning = true;
+
+    document.getElementById('btnStart').classList.add('hidden');
+    document.getElementById('btnResume').classList.add('hidden');
+    document.getElementById('btnPause').classList.remove('hidden');
+
+    document.getElementById('timerStateLabel').textContent =
+      'In Progress';
+
+    startInterval();
+  }
+
+  function pauseTimer() {
+    isRunning = false;
+
+    clearInterval(timerInterval);
+
+    document.getElementById('btnPause').classList.add('hidden');
+    document.getElementById('btnResume').classList.remove('hidden');
+
+    document.getElementById('timerStateLabel').textContent =
+      'Paused';
+  }
+
+  function resumeTimer() {
+    isRunning = true;
+
+    document.getElementById('btnResume').classList.add('hidden');
+    document.getElementById('btnPause').classList.remove('hidden');
+
+    document.getElementById('timerStateLabel').textContent =
+      'In Progress';
+
+    startInterval();
+  }
+
+  async function finishTimer() {
+    clearInterval(timerInterval);
+    isRunning = false;
+
+    const elapsedSeconds =
+      totalSeconds - remainingSeconds;
+
+    const actualMinutes = Math.max(
+      1,
+      Math.round(elapsedSeconds / 60)
+    );
+
+    console.log("TIMER DEBUG");
+    console.log("Planned minutes:", plannedMinutes);
+    console.log("Total seconds:", totalSeconds);
+    console.log("Remaining seconds:", remainingSeconds);
+    console.log("Elapsed seconds:", elapsedSeconds);
+    console.log("Actual minutes:", actualMinutes);
+
+    try {
+      const response = await fetch('/api/study-sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task_id: currentTaskId,
+          planned_minutes: plannedMinutes,
+          actual_minutes: actualMinutes,
+          start_time: null,
+          end_time: new Date().toISOString(),
+          completed: 1
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || 'Failed to save study session'
+        );
+      }
+
+      console.log(
+        'Study session saved to database:',
+        data
+      );
+
+      window.location.href =
+        'progress.html?session_completed=1';
+
+    } catch (error) {
+
+      console.error(
+        'Failed to save study session:',
+        error
+      );
+
+      alert(
+        'Could not save your study session. Please try again.'
+      );
     }
+  }
 
-    function updateDisplay() {
-      const m = Math.floor(remainingSeconds / 60);
-      const s = remainingSeconds % 60;
-      document.getElementById('timeDisplay').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-      // Update ring offset
-      const progressFraction = (totalSeconds - remainingSeconds) / totalSeconds;
-      const offset = circumference * (1 - progressFraction);
-      document.getElementById('timerRing').style.strokeDashoffset = Math.max(0, offset);
-    }
-
-    function startInterval() {
-      clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        if (remainingSeconds > 0) {
-          remainingSeconds--;
-          updateDisplay();
-        } else {
-          clearInterval(timerInterval);
-          finishTimer();
-        }
-      }, 1000);
-    }
-
-    function startTimer() {
-      isRunning = true;
-      document.getElementById('btnStart').classList.add('hidden');
-      document.getElementById('btnResume').classList.add('hidden');
-      document.getElementById('btnPause').classList.remove('hidden');
-      document.getElementById('timerStateLabel').textContent = 'In Progress';
-      startInterval();
-    }
-
-    function pauseTimer() {
-      isRunning = false;
-      clearInterval(timerInterval);
-      document.getElementById('btnPause').classList.add('hidden');
-      document.getElementById('btnResume').classList.remove('hidden');
-      document.getElementById('timerStateLabel').textContent = 'Paused';
-    }
-
-    function resumeTimer() {
-      isRunning = true;
-      document.getElementById('btnResume').classList.add('hidden');
-      document.getElementById('btnPause').classList.remove('hidden');
-      document.getElementById('timerStateLabel').textContent = 'In Progress';
-      startInterval();
-    }
-
-    function finishTimer() {
-      clearInterval(timerInterval);
-      const actualMinutes = Math.max(1, Math.round((totalSeconds - remainingSeconds) / 60));
-      
-      // Save study session record to store (powered by studyTracker.cpp concept)
-      StudyGPS.recordStudySession(currentTaskId, plannedMinutes, actualMinutes, 1);
-
-      // Transition to Progress Report
-      window.location.href = 'progress.html?session_completed=1';
-    }
-
-    document.addEventListener('DOMContentLoaded', initTask);
-  </script>
+  document.addEventListener(
+    'DOMContentLoaded',
+    initTask
+  );
+</script>
 </body>
 </html>

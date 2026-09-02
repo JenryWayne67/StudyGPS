@@ -4,6 +4,7 @@ const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const authRoutes = require('./backend/routes/auth');
+const studySessionRoutes = require('./backend/routes/studySessions');
 
 const app = express();
 const PORT = 3000;
@@ -67,6 +68,9 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
 
 // Mount auth routes under /api/auth
 app.use('/api/auth', authRoutes);
+
+// Mount study session routes
+app.use('/api/study-sessions', studySessionRoutes);
 
 // Serve static frontend assets
 app.use(express.static(frontendPath));

@@ -267,27 +267,58 @@ public:
 //  Scheduled Task -> Start -> Study -> Pause/Resume -> Finish
 //  -> Calculate Actual Time -> Update Task Status -> Save
 // ============================================================
-int main() {
-    StudySession session(1, "Logical Operators", 50);
+int main(int argc, char* argv[]) {
 
-    session.startSession();                      // Not Started -> In Progress
+    // Expected:
+    // studyTracker.exe <task_id> <task_name> <planned_minutes> <actual_seconds>
 
-    session.addElapsedSecondsForTesting(25 * 60);  // studied 25 min
-    session.pauseSession();                        // break (not counted)
-    session.resumeSession();
-    session.addElapsedSecondsForTesting(18 * 60);  // studied 18 more min
+    if (argc != 5) {
+        std::cerr
+            << "Usage: studyTracker.exe <task_id> <task_name> "
+            << "<planned_minutes> <actual_seconds>\n";
+        return 1;
+    }
 
-    session.finishSession();                     // In Progress -> Completed
-    session.displaySummary();
+    try {
+        int taskId = std::stoi(argv[1]);
+        std::string taskName = argv[2];
+        int plannedMinutes = std::stoi(argv[3]);
+        long long actualSeconds = std::stoll(argv[4]);
 
-    // Row that the backend will insert into study_sessions
-    StudySessionRecord row = session.toRecord();
-    std::cout << "\n[study_sessions] task_id=" << row.taskId
-              << ", planned_minutes=" << row.plannedMinutes
-              << ", actual_minutes="  << row.actualMinutes
-              << ", start_time='"     << row.startTime << "'"
-              << ", end_time='"       << row.endTime   << "'"
-              << ", completed="       << row.completed << "\n";
+        if (taskId <= 0 || plannedMinutes <= 0 || actualSeconds < 0) {
+            std::cerr << "Invalid input values.\n";
+            return 1;
+        }
 
-    return 0;
+        // Create the C++ study session.
+        StudySession session(taskId, taskName, plannedMinutes);
+
+        // Start the session.
+        session.startSession();
+
+        // For this integration step, the frontend has already
+        // measured the active study time.
+        session.addElapsedSecondsForTesting(actualSeconds);
+
+        // Finish and calculate actual study time.
+        session.finishSession();
+
+        // Convert to database-ready record.
+        StudySessionRecord row = session.toRecord();
+
+        // IMPORTANT:
+        // Output only machine-readable data for Node.js.
+        std::cout
+            << "task_id=" << row.taskId
+            << " planned_minutes=" << row.plannedMinutes
+            << " actual_minutes=" << row.actualMinutes
+            << " completed=" << row.completed
+            << "\n";
+
+        return 0;
+
+    } catch (const std::exception& error) {
+        std::cerr << "C++ error: " << error.what() << "\n";
+        return 1;
+    }
 }
