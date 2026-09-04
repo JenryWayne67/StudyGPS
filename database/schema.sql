@@ -94,3 +94,4 @@ CREATE TABLE study_sessions (
     completed INTEGER DEFAULT 0,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+

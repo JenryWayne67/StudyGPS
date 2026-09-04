@@ -14,7 +14,10 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
-
+const courseRoutes = require('./backend/routes/courses');
+const materialRoutes = require('./backend/routes/materials');
+console.log('MATERIAL ROUTES TYPE:', typeof materialRoutes);
+console.log('MATERIAL ROUTES:', materialRoutes);
 
 const frontendPath = path.join(__dirname, 'frontend');
 
@@ -78,6 +81,12 @@ app.use('/api/auth', authRoutes);
 
 // Mount study session routes
 app.use('/api/study-sessions', studySessionRoutes);
+
+// Mount course routes
+app.use('/api/courses', courseRoutes);
+
+// Mount Material routes
+app.use('/api/materials', materialRoutes);
 
 // Serve static frontend assets
 app.use(express.static(frontendPath));

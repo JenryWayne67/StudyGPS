@@ -338,32 +338,64 @@
   <script>
     let currentSelectedMaterialId = 1;
 
-    function renderCourseOptions(selectCourseId = null) {
-      const courses = StudyGPS.getCourses();
-      const select = document.getElementById('courseSelect');
-      const chipsContainer = document.getElementById('courseChipsList');
-      
-      const currentVal = selectCourseId || select.value || (courses.length > 0 ? courses[0].id : 1);
 
-      // Populate select dropdown
-      select.innerHTML = courses.map(c => `
-        <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
-          ${c.icon || '📘'} ${c.name} (${c.code || 'Course'})
-        </option>
+async function renderCourseOptions(selectCourseId = null) {
+  try {
+    // Get courses from the real backend / SQLite database
+    const response = await fetch('/api/courses');
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to load courses');
+    }
+
+    const courses = data.courses;
+
+    const select = document.getElementById('courseSelect');
+    const chipsContainer = document.getElementById('courseChipsList');
+
+    if (!select) return;
+
+    const currentVal =
+      selectCourseId ||
+      select.value ||
+      (courses.length > 0 ? courses[0].id : null);
+
+    // Populate select dropdown
+    select.innerHTML = courses.map(c => `
+      <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
+        📘 ${c.name}
+      </option>
+    `).join('');
+
+    // Populate quick course chips
+    if (chipsContainer) {
+      chipsContainer.innerHTML = courses.map(c => `
+        <button
+          type="button"
+          onclick="switchCourse(${c.id})"
+          class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${
+            String(c.id) === String(currentVal)
+              ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
+              : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+          }"
+        >
+          <span>📘</span>
+          <span>${c.name}</span>
+        </button>
       `).join('');
+    }
 
-      // Populate quick course chips
-      if (chipsContainer) {
-        chipsContainer.innerHTML = courses.map(c => `
-          <button type="button" onclick="switchCourse(${c.id})" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${String(c.id) === String(currentVal) ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'}">
-            <span>${c.icon || '📘'}</span>
-            <span>${c.name}</span>
-          </button>
-        `).join('');
-      }
-
+    // Load materials for selected course
+    if (courses.length > 0) {
       loadCourseMaterials();
     }
+
+  } catch (error) {
+    console.error('Failed to load courses:', error);
+  }
+}
+
 
     function switchCourse(courseId) {
       document.getElementById('courseSelect').value = courseId;
