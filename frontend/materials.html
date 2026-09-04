@@ -334,68 +334,66 @@
     </div>
   </div>
 
-  <script src="app-store.js"></script>
   <script>
-    let currentSelectedMaterialId = 1;
+    let currentSelectedMaterialId = null;
+    let currentCourseMaterials = [];
 
+    async function renderCourseOptions(selectCourseId = null) {
+      try {
+        // Get courses from the real backend / SQLite database
+        const response = await fetch('/api/courses');
+        const data = await response.json();
 
-async function renderCourseOptions(selectCourseId = null) {
-  try {
-    // Get courses from the real backend / SQLite database
-    const response = await fetch('/api/courses');
-    const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to load courses');
+        }
 
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to load courses');
+        const courses = data.courses;
+
+        const select = document.getElementById('courseSelect');
+        const chipsContainer = document.getElementById('courseChipsList');
+
+        if (!select) return;
+
+        const currentVal =
+          selectCourseId ||
+          select.value ||
+          (courses.length > 0 ? courses[0].id : null);
+
+        // Populate select dropdown
+        select.innerHTML = courses.map(c => `
+          <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
+            📘 ${c.name}
+          </option>
+        `).join('');
+
+        // Populate quick course chips
+        if (chipsContainer) {
+          chipsContainer.innerHTML = courses.map(c => `
+            <button
+              type="button"
+              onclick="switchCourse(${c.id})"
+              class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${
+                String(c.id) === String(currentVal)
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+              }"
+            >
+              <span>📘</span>
+              <span>${c.name}</span>
+            </button>
+          `).join('');
+        }
+
+        // Load materials for selected course
+        if (courses.length > 0) {
+          loadCourseMaterials();
+        }
+
+      } catch (error) {
+        console.error('Failed to load courses:', error);
+      }
     }
-
-    const courses = data.courses;
-
-    const select = document.getElementById('courseSelect');
-    const chipsContainer = document.getElementById('courseChipsList');
-
-    if (!select) return;
-
-    const currentVal =
-      selectCourseId ||
-      select.value ||
-      (courses.length > 0 ? courses[0].id : null);
-
-    // Populate select dropdown
-    select.innerHTML = courses.map(c => `
-      <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
-        📘 ${c.name}
-      </option>
-    `).join('');
-
-    // Populate quick course chips
-    if (chipsContainer) {
-      chipsContainer.innerHTML = courses.map(c => `
-        <button
-          type="button"
-          onclick="switchCourse(${c.id})"
-          class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${
-            String(c.id) === String(currentVal)
-              ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
-              : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-          }"
-        >
-          <span>📘</span>
-          <span>${c.name}</span>
-        </button>
-      `).join('');
-    }
-
-    // Load materials for selected course
-    if (courses.length > 0) {
-      loadCourseMaterials();
-    }
-
-  } catch (error) {
-    console.error('Failed to load courses:', error);
-  }
-}
-
 
     function switchCourse(courseId) {
       document.getElementById('courseSelect').value = courseId;
@@ -412,64 +410,98 @@ async function renderCourseOptions(selectCourseId = null) {
       document.getElementById('addCourseForm').reset();
     }
 
-    function handleCreateCourse(e) {
+    async function handleCreateCourse(e) {
       e.preventDefault();
       const name = document.getElementById('newCourseName').value.trim();
-      const code = document.getElementById('newCourseCode').value.trim();
-      const color = document.getElementById('newCourseColor').value;
-      const iconInput = document.querySelector('input[name="course_icon"]:checked');
-      const icon = iconInput ? iconInput.value : '📘';
-
       if (!name) return;
 
-      const newCourse = StudyGPS.addCourse(name, code, color, icon);
-      closeAddCourseModal();
-      
-      // Re-render course selector with the new course actively selected
-      renderCourseOptions(newCourse.id);
+      // Note: the courses table only stores id/user_id/name today, so
+      // course code/color/icon picked in this form aren't persisted yet.
+      try {
+        const response = await fetch('/api/courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to create course');
+        }
+
+        closeAddCourseModal();
+        renderCourseOptions(data.course.id);
+
+      } catch (error) {
+        console.error('Failed to create course:', error);
+        alert('Could not create course: ' + error.message);
+      }
     }
 
-    function loadCourseMaterials() {
+    async function loadCourseMaterials() {
       const courseId = document.getElementById('courseSelect').value;
-      const materials = StudyGPS.getMaterials(courseId);
       const container = document.getElementById('materialsList');
 
-      if (materials.length === 0) {
-        container.innerHTML = `
-          <div class="p-8 text-center space-y-2">
-            <span class="text-3xl block">📂</span>
-            <p class="text-xs font-bold text-slate-600">No PDFs uploaded for this course yet.</p>
-            <p class="text-[11px] text-slate-400 font-medium">Use the upload box above to ingest lecture notes, textbooks, or syllabus files.</p>
-          </div>
-        `;
+      try {
+        const response = await fetch(`/api/materials?course_id=${encodeURIComponent(courseId)}`);
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to load materials');
+        }
+
+        currentCourseMaterials = data.materials;
+
+        if (currentCourseMaterials.length === 0) {
+          container.innerHTML = `
+            <div class="p-8 text-center space-y-2">
+              <span class="text-3xl block">📂</span>
+              <p class="text-xs font-bold text-slate-600">No PDFs uploaded for this course yet.</p>
+              <p class="text-[11px] text-slate-400 font-medium">Use the upload box above to ingest lecture notes, textbooks, or syllabus files.</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = currentCourseMaterials.map(mat => {
+          const sizeLabel = mat.file_size
+            ? (Number(mat.file_size) > 1024
+                ? (Number(mat.file_size) / (1024 * 1024)).toFixed(1) + ' MB'
+                : mat.file_size)
+            : '';
+          const pageLabel = mat.page_count ? `${mat.page_count} pages` : 'not yet processed';
+          return `
+            <div class="p-4 flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <span class="text-xl">📄</span>
+                <div>
+                  <h4 class="text-xs font-bold text-slate-800">${mat.filename}</h4>
+                  <p class="text-[11px] text-slate-400 font-medium">${sizeLabel}${sizeLabel ? ' • ' : ''}${pageLabel} • ${mat.status}</p>
+                </div>
+              </div>
+              <button onclick="triggerAnalyze(${mat.id})" id="analyzeBtn-${mat.id}" class="btn btn-secondary btn-sm">
+                ${mat.status === 'processed' ? 'Re-analyze' : 'Analyze'}
+              </button>
+            </div>
+          `;
+        }).join('');
+
+      } catch (error) {
+        console.error('Failed to load materials:', error);
+        container.innerHTML = `<div class="p-4 text-xs font-semibold text-red-600">Failed to load materials: ${error.message}</div>`;
+      }
+    }
+
+    function renderSections(mat, sections) {
+      document.getElementById('analyzedDocTitle').textContent = mat ? mat.filename : 'Untitled';
+
+      const secContainer = document.getElementById('detectedSectionsContainer');
+
+      if (!sections || sections.length === 0) {
+        secContainer.innerHTML = `<p class="text-xs text-slate-400 font-medium">No sections detected yet.</p>`;
         return;
       }
 
-      container.innerHTML = materials.map(mat => `
-        <div class="p-4 flex items-center justify-between gap-4">
-          <div class="flex items-center gap-3">
-            <span class="text-xl">📄</span>
-            <div>
-              <h4 class="text-xs font-bold text-slate-800">${mat.filename}</h4>
-              <p class="text-[11px] text-slate-400 font-medium">${mat.file_size} • ${mat.page_count} pages</p>
-            </div>
-          </div>
-          <button onclick="triggerAnalyze(${mat.id})" class="btn btn-secondary btn-sm">
-            Analyze
-          </button>
-        </div>
-      `).join('');
-    }
-
-    function triggerAnalyze(materialId) {
-      currentSelectedMaterialId = materialId;
-      const sections = StudyGPS.analyzeMaterial(materialId);
-      const materials = StudyGPS.getMaterials();
-      const mat = materials.find(m => m.id === materialId) || materials[0];
-
-      document.getElementById('analyzedDocTitle').textContent = mat ? mat.filename : 'Discrete Mathematics.pdf';
-      
-      const secContainer = document.getElementById('detectedSectionsContainer');
       secContainer.innerHTML = sections.map(sec => `
         <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
           <div class="flex items-center justify-between">
@@ -483,20 +515,71 @@ async function renderCourseOptions(selectCourseId = null) {
       document.getElementById('analysisPanel').scrollIntoView({ behavior: 'smooth' });
     }
 
-    function handleFileUpload(e) {
+    // Runs the real PDF -> pages -> sections -> C++ task engine pipeline
+    // (backend/routes/materials.js POST /:id/process). Safe to click more
+    // than once - reprocessing a material is idempotent server-side.
+    async function triggerAnalyze(materialId) {
+      currentSelectedMaterialId = materialId;
+      const mat = currentCourseMaterials.find(m => m.id === materialId);
+
+      const btn = document.getElementById(`analyzeBtn-${materialId}`);
+      const originalLabel = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+
+      try {
+        const response = await fetch(`/api/materials/${materialId}/process`, { method: 'POST' });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to process material');
+        }
+
+        renderSections(mat, data.sections);
+        loadCourseMaterials(); // refresh page_count/status shown in the list
+
+      } catch (error) {
+        console.error('Failed to analyze material:', error);
+        alert('Could not analyze this PDF: ' + error.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+      }
+    }
+
+    async function handleFileUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
 
       const courseId = document.getElementById('courseSelect').value;
-      const sizeStr = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
-      
-      const newMat = StudyGPS.uploadMaterial(courseId, file.name, sizeStr);
-      loadCourseMaterials();
-      triggerAnalyze(newMat.id);
+
+      const formData = new FormData();
+      formData.append('pdf', file);
+      formData.append('course_id', courseId);
+
+      try {
+        const response = await fetch('/api/materials/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Upload failed');
+        }
+
+        await loadCourseMaterials();
+        triggerAnalyze(data.material.id);
+
+      } catch (error) {
+        console.error('Failed to upload material:', error);
+        alert('Could not upload PDF: ' + error.message);
+      } finally {
+        e.target.value = '';
+      }
     }
 
     function generateTasks() {
-      StudyGPS.generateTasksFromMaterial(currentSelectedMaterialId);
+      // Tasks are already created server-side as part of /process, so
+      // there's nothing left to generate here - just hand off to Tasks.
       window.location.href = 'tasks.html';
     }
 

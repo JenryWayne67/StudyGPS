@@ -584,4 +584,64 @@ router.post('/:id/process', async (req, res) => {
     }
 });
 
+// ==========================================
+// GET /api/materials/:id/sections
+// Read back previously detected sections (+ their tasks) without
+// re-parsing the PDF. Empty array if the material hasn't been
+// processed yet.
+// ==========================================
+
+router.get('/:id/sections', (req, res) => {
+    try {
+        const materialId = Number(req.params.id);
+
+        if (!materialId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid material ID'
+            });
+        }
+
+        const material = db.prepare(`SELECT id FROM materials WHERE id = ?`).get(materialId);
+
+        if (!material) {
+            return res.status(404).json({
+                success: false,
+                error: 'Material not found'
+            });
+        }
+
+        const sections = db.prepare(`
+            SELECT
+                s.id,
+                s.title,
+                s.start_page,
+                s.end_page,
+                s.estimated_minutes,
+                s.difficulty,
+                t.id AS task_id,
+                t.priority AS task_priority,
+                t.status AS task_status
+            FROM sections s
+            LEFT JOIN tasks t ON t.section_id = s.id
+            WHERE s.material_id = ?
+            ORDER BY s.start_page ASC
+        `).all(materialId);
+
+        res.json({
+            success: true,
+            material_id: materialId,
+            sections
+        });
+
+    } catch (error) {
+        console.error('Get material sections error:', error);
+
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
