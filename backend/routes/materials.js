@@ -4,6 +4,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const Database = require('better-sqlite3');
+const { execFileSync } = require('child_process');
 
 const router = express.Router();
 
@@ -300,8 +301,133 @@ router.post('/upload', upload.single('pdf'), (req, res) => {
 
 
 // ==========================================
+// PDF -> pages -> sections -> tasks helpers
+// ==========================================
+
+// Split the full extracted text into per-page chunks using the
+// "-- <page> of <total> --" markers pdf-parse inserts between pages.
+// Content BEFORE a marker belongs to the page number named in that
+// marker (verified against material 2: 54 markers for 54 pages).
+function splitIntoPages(fullText) {
+    const markerRe = /--\s*(\d+)\s*of\s*(\d+)\s*--/g;
+    const pages = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = markerRe.exec(fullText)) !== null) {
+        const pageNumber = Number(match[1]);
+        const content = fullText.slice(lastIndex, match.index).trim();
+        pages.push({ page_number: pageNumber, content });
+        lastIndex = markerRe.lastIndex;
+    }
+
+    // No markers found at all (single-page PDF, or a PDF whose text
+    // extraction doesn't emit them) - fall back to one page.
+    if (pages.length === 0) {
+        const content = fullText.trim();
+        if (content) pages.push({ page_number: 1, content });
+        return pages;
+    }
+
+    // Anything after the final marker (rare) gets folded into the last page
+    const trailing = fullText.slice(lastIndex).trim();
+    if (trailing) {
+        pages[pages.length - 1].content += '\n' + trailing;
+    }
+
+    return pages;
+}
+
+// Detect logical sections from each page's heading/footer line.
+// These slide decks repeat the current subsection label (e.g.
+// "6.1 Class and Object") on most pages; a page missing that label
+// (a chapter-overview / table-of-contents page) is folded into the
+// section it introduces. Consecutive pages sharing a label become one
+// section, so a section can span multiple pages.
+function detectSections(pages) {
+    const labelPattern = /^(\d+\.\d+)\s+([A-Z][^\n]{1,80})$/;
+
+    const labeled = pages.map((p) => {
+        const lines = p.content.split('\n').map((l) => l.trim()).filter(Boolean);
+        const matches = lines
+            .map((line) => line.match(labelPattern))
+            .filter(Boolean)
+            .map((m) => `${m[1]} ${m[2]}`);
+
+        // A page naming exactly one subsection is confidently "on" that
+        // subsection. A page naming several (a table-of-contents /
+        // chapter-overview page listing 6.1, 6.2, 6.3...) isn't reliably
+        // about any single one of them, so leave it unlabeled and let it
+        // fold into whichever section follows it.
+        const label = matches.length === 1 ? matches[0] : null;
+        return { page_number: p.page_number, label };
+    });
+
+    // Backward-fill: a label-less page belongs to the section
+    // introduced by the next labeled page.
+    let nextLabel = null;
+    for (let i = labeled.length - 1; i >= 0; i--) {
+        if (labeled[i].label) nextLabel = labeled[i].label;
+        else labeled[i].label = nextLabel;
+    }
+    // Forward-fill any still-unlabeled trailing pages (edge case: no
+    // labeled page exists at all after them).
+    let prevLabel = null;
+    for (let i = 0; i < labeled.length; i++) {
+        if (labeled[i].label) prevLabel = labeled[i].label;
+        else labeled[i].label = prevLabel || 'Untitled Section';
+    }
+
+    const sections = [];
+    for (const { page_number, label } of labeled) {
+        const last = sections[sections.length - 1];
+        if (last && last.title === label) {
+            last.end_page = page_number;
+        } else {
+            sections.push({ title: label, start_page: page_number, end_page: page_number });
+        }
+    }
+
+    return sections.map((s) => {
+        const pageCount = s.end_page - s.start_page + 1;
+        return {
+            ...s,
+            estimated_minutes: Math.max(5, pageCount * 3),
+            difficulty: 1
+        };
+    });
+}
+
+// Run cpp_engine/sectionTaskManager.exe: pipe sections in (pipe-delimited,
+// one per line), get tasks out (key=value, one per line) - same CLI
+// contract studyTracker.cpp already uses for the Node <-> C++ boundary.
+function runSectionTaskManager(sectionRows) {
+    const exePath = path.join(__dirname, '../../cpp_engine/sectionTaskManager.exe');
+
+    const input = sectionRows
+        .map((s) => [s.id, s.title, s.start_page, s.end_page, s.estimated_minutes, s.difficulty].join('|'))
+        .join('\n') + '\n';
+
+    const stdout = execFileSync(exePath, [], { input, encoding: 'utf8' });
+
+    const tasks = [];
+    const lineRe = /section_id=(\d+)\s+priority=(\d+)\s+status=(.+)$/;
+    for (const line of stdout.split('\n')) {
+        const m = line.match(lineRe);
+        if (m) {
+            tasks.push({
+                section_id: Number(m[1]),
+                priority: Number(m[2]),
+                status: m[3].trim()
+            });
+        }
+    }
+    return tasks;
+}
+
+// ==========================================
 // POST /api/materials/:id/process
-// EXTRACT TEXT AND PAGE COUNT FROM PDF
+// PDF -> pages -> sections -> tasks (idempotent: safe to re-run)
 // ==========================================
 
 router.post('/:id/process', async (req, res) => {
@@ -354,18 +480,82 @@ router.post('/:id/process', async (req, res) => {
         const result = await parser.getText();
 
         const pageCount = result.total;
+        const pages = splitIntoPages(result.text);
+        const detectedSections = detectSections(pages);
 
-        // Update database
-        db.prepare(`
-            UPDATE materials
-            SET page_count = ?,
-                status = ?
-            WHERE id = ?
-        `).run(
-            pageCount,
-            'processed',
-            materialId
-        );
+        // Everything below is one atomic, idempotent unit: reprocessing
+        // the same material clears only ITS OWN pages/sections/tasks
+        // (never other materials' data) before rebuilding them.
+        const applyProcessing = db.transaction(() => {
+            // 1. material_pages (replace this material's pages only)
+            db.prepare(`DELETE FROM material_pages WHERE material_id = ?`).run(materialId);
+
+            const insertPage = db.prepare(`
+                INSERT INTO material_pages (material_id, page_number, content)
+                VALUES (?, ?, ?)
+            `);
+            for (const p of pages) {
+                insertPage.run(materialId, p.page_number, p.content);
+            }
+
+            // 2. sections (replace this material's sections + their tasks only)
+            const oldSectionIds = db.prepare(`
+                SELECT id FROM sections WHERE material_id = ?
+            `).all(materialId).map((r) => r.id);
+
+            if (oldSectionIds.length > 0) {
+                const placeholders = oldSectionIds.map(() => '?').join(',');
+                db.prepare(`DELETE FROM tasks WHERE section_id IN (${placeholders})`).run(...oldSectionIds);
+                db.prepare(`DELETE FROM sections WHERE id IN (${placeholders})`).run(...oldSectionIds);
+            }
+
+            const insertSection = db.prepare(`
+                INSERT INTO sections
+                    (course_id, material_id, title, start_page, end_page, estimated_minutes, difficulty)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `);
+
+            const insertedSections = detectedSections.map((s) => {
+                const info = insertSection.run(
+                    material.course_id,
+                    materialId,
+                    s.title,
+                    s.start_page,
+                    s.end_page,
+                    s.estimated_minutes,
+                    s.difficulty
+                );
+                return { id: info.lastInsertRowid, ...s };
+            });
+
+            // 3. tasks, produced by the C++ section/task engine
+            let insertedTasks = [];
+            if (insertedSections.length > 0) {
+                const tasksFromCpp = runSectionTaskManager(insertedSections);
+
+                const insertTask = db.prepare(`
+                    INSERT INTO tasks (section_id, priority, deadline, status)
+                    VALUES (?, ?, NULL, ?)
+                `);
+
+                insertedTasks = tasksFromCpp.map((t) => {
+                    const info = insertTask.run(t.section_id, t.priority, t.status);
+                    return { id: info.lastInsertRowid, ...t };
+                });
+            }
+
+            // 4. materials status/page_count
+            db.prepare(`
+                UPDATE materials
+                SET page_count = ?,
+                    status = ?
+                WHERE id = ?
+            `).run(pageCount, 'processed', materialId);
+
+            return { insertedSections, insertedTasks };
+        });
+
+        const { insertedSections, insertedTasks } = applyProcessing();
 
         res.json({
             success: true,
@@ -373,6 +563,9 @@ router.post('/:id/process', async (req, res) => {
             material_id: materialId,
             filename: material.filename,
             page_count: pageCount,
+            pages_stored: pages.length,
+            sections: insertedSections,
+            tasks: insertedTasks,
             text_preview: result.text.substring(0, 2000)
         });
 
@@ -388,6 +581,66 @@ router.post('/:id/process', async (req, res) => {
         if (parser) {
             await parser.destroy();
         }
+    }
+});
+
+// ==========================================
+// GET /api/materials/:id/sections
+// Read back previously detected sections (+ their tasks) without
+// re-parsing the PDF. Empty array if the material hasn't been
+// processed yet.
+// ==========================================
+
+router.get('/:id/sections', (req, res) => {
+    try {
+        const materialId = Number(req.params.id);
+
+        if (!materialId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid material ID'
+            });
+        }
+
+        const material = db.prepare(`SELECT id FROM materials WHERE id = ?`).get(materialId);
+
+        if (!material) {
+            return res.status(404).json({
+                success: false,
+                error: 'Material not found'
+            });
+        }
+
+        const sections = db.prepare(`
+            SELECT
+                s.id,
+                s.title,
+                s.start_page,
+                s.end_page,
+                s.estimated_minutes,
+                s.difficulty,
+                t.id AS task_id,
+                t.priority AS task_priority,
+                t.status AS task_status
+            FROM sections s
+            LEFT JOIN tasks t ON t.section_id = s.id
+            WHERE s.material_id = ?
+            ORDER BY s.start_page ASC
+        `).all(materialId);
+
+        res.json({
+            success: true,
+            material_id: materialId,
+            sections
+        });
+
+    } catch (error) {
+        console.error('Get material sections error:', error);
+
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 
