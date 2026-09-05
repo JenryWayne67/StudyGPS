@@ -217,6 +217,22 @@
     let isRunning = false;
     let isTimerActive = false;
 
+    // Which task cards currently have their inline PDF viewer expanded.
+    // Kept separate from the timer state so opening the PDF doesn't
+    // require (or interfere with) starting a timer, and survives
+    // renderTasks() being called again (filter changes, etc.) since the
+    // countdown tick itself only calls updateTimerDisplay(), not this.
+    const openPdfTaskIds = new Set();
+
+    function togglePdfPanel(taskId) {
+      if (openPdfTaskIds.has(taskId)) {
+        openPdfTaskIds.delete(taskId);
+      } else {
+        openPdfTaskIds.add(taskId);
+      }
+      renderTasks();
+    }
+
     // Real data, loaded from the backend once and re-rendered locally as
     // filters change / the timer runs.
     let allTasksCache = [];
@@ -490,6 +506,12 @@
               </div>
 
               <div class="flex items-center gap-2">
+                ${task.material_id ? `
+                  <button type="button" onclick="togglePdfPanel(${task.id})" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path><path d="M6 6h10"></path><path d="M6 10h10"></path></svg>
+                    ${openPdfTaskIds.has(task.id) ? 'Hide PDF' : 'View PDF'}
+                  </button>
+                ` : ''}
                 ${isDone ? `
                   <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
                     ✓ Completed
@@ -506,6 +528,22 @@
                 `)}
               </div>
             </div>
+
+            <!-- INLINE PDF VIEWER: lets the person read the actual material
+                 right here while a timer on this same card is tracking
+                 their session, instead of needing a separate tab. Jumps to
+                 this task's start page via the #page= fragment, which
+                 Chrome/Edge/Firefox's built-in PDF viewer all honor. -->
+            ${task.material_id && openPdfTaskIds.has(task.id) ? `
+              <div class="border-t border-slate-100 pt-4 mt-2">
+                <iframe
+                  src="/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}"
+                  class="w-full rounded-xl border border-slate-200"
+                  style="height: 70vh;"
+                  title="${task.material_name || 'Study material'}"
+                ></iframe>
+              </div>
+            ` : ''}
 
             <!-- INLINE TIMER PANEL: APPEARS ONLY UNDER THIS TASK WHEN STARTED -->
             ${isCurrentActive ? `

@@ -842,4 +842,58 @@ router.get('/:id/sections', async (req, res) => {
     }
 });
 
+// ==========================================
+// GET /api/materials/:id/file
+// Streams the raw PDF bytes back out of `materials.file_data` so the
+// browser can render it directly - used by tasks.html/schedule.html to
+// embed the PDF in an <iframe> right next to the study timer, instead of
+// only offering a download. `inline` (not `attachment`) is what tells
+// the browser to display it rather than save it, and the session cookie
+// that requireAuth checks travels automatically with a same-origin
+// <iframe src="...">, so no separate token/link-sharing scheme is needed.
+// ==========================================
+
+router.get('/:id/file', async (req, res) => {
+    try {
+        const materialId = Number(req.params.id);
+
+        if (!materialId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid material ID'
+            });
+        }
+
+        const material = await materialOwnedByUser(materialId, req.user.id);
+
+        if (!material) {
+            return res.status(404).json({
+                success: false,
+                error: 'Material not found'
+            });
+        }
+
+        if (!material.file_data) {
+            return res.status(404).json({
+                success: false,
+                error: 'PDF file not found - it may need to be re-uploaded'
+            });
+        }
+
+        const dataBuffer = Buffer.from(material.file_data);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${material.filename || 'material.pdf'}"`);
+        res.send(dataBuffer);
+
+    } catch (error) {
+        console.error('Get material file error:', error);
+
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
