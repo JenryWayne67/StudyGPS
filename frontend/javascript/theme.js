@@ -80,14 +80,43 @@
 
         [data-theme="dark"] .bg-blue-50 { background-color: #1e3a5f !important; }
         [data-theme="dark"] .bg-blue-100 { background-color: #1e3a5f !important; }
+        [data-theme="dark"] .bg-blue-200 { background-color: #1e40af !important; }
         [data-theme="dark"] .border-blue-100 { border-color: #1e40af !important; }
         [data-theme="dark"] .border-blue-200 { border-color: #1e40af !important; }
         [data-theme="dark"] .border-blue-300 { border-color: #1d4ed8 !important; }
         [data-theme="dark"] .border-blue-400 { border-color: #2563eb !important; }
+        [data-theme="dark"] .border-blue-500 { border-color: #3b82f6 !important; }
+        [data-theme="dark"] .border-blue-600 { border-color: #3b82f6 !important; }
+        [data-theme="dark"] .text-blue-600 { color: #60a5fa !important; }
+        [data-theme="dark"] .text-blue-700 { color: #93c5fd !important; }
+        [data-theme="dark"] .text-blue-800 { color: #bfdbfe !important; }
 
         [data-theme="dark"] .bg-emerald-50 { background-color: #064e3b !important; }
+        [data-theme="dark"] .bg-emerald-100 { background-color: #065f46 !important; }
+        [data-theme="dark"] .border-emerald-100 { border-color: #047857 !important; }
         [data-theme="dark"] .border-emerald-200 { border-color: #047857 !important; }
+        [data-theme="dark"] .text-emerald-600 { color: #34d399 !important; }
+        [data-theme="dark"] .text-emerald-700 { color: #6ee7b7 !important; }
+        [data-theme="dark"] .text-emerald-800 { color: #a7f3d0 !important; }
+        [data-theme="dark"] .text-emerald-900 { color: #d1fae5 !important; }
+
         [data-theme="dark"] .bg-amber-100 { background-color: #78350f !important; }
+        [data-theme="dark"] .text-amber-600 { color: #fbbf24 !important; }
+        [data-theme="dark"] .text-amber-800 { color: #fde68a !important; }
+
+        [data-theme="dark"] .bg-red-50 { background-color: #7f1d1d !important; }
+        [data-theme="dark"] .border-red-100 { border-color: #b91c1c !important; }
+        [data-theme="dark"] .border-red-200 { border-color: #b91c1c !important; }
+        [data-theme="dark"] .text-red-600 { color: #f87171 !important; }
+        [data-theme="dark"] .text-red-700 { color: #fca5a5 !important; }
+
+        [data-theme="dark"] .bg-rose-50 { background-color: #881337 !important; }
+        [data-theme="dark"] .border-rose-200 { border-color: #9f1239 !important; }
+        [data-theme="dark"] .text-rose-600 { color: #fb7185 !important; }
+        [data-theme="dark"] .text-rose-700 { color: #fda4af !important; }
+
+        [data-theme="dark"] .text-cyan-600 { color: #22d3ee !important; }
+        [data-theme="dark"] .text-purple-600 { color: #c4b5fd !important; }
 
         [data-theme="dark"] ::placeholder { color: #64748b !important; }
         [data-theme="dark"] input,
