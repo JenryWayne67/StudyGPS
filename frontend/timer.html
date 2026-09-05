@@ -141,8 +141,7 @@
     </main>
   </div>
 
-  <script src="app-store.js"></script>
-<script>
+  <script>
   let currentTaskId = 1;
   let plannedMinutes = 50;
   let totalSeconds = 50 * 60;
@@ -157,19 +156,27 @@
     return urlParams.get(name);
   }
 
-  function initTask() {
+  async function initTask() {
     const paramId = getQueryParam('task_id');
 
     if (paramId) {
       currentTaskId = Number(paramId);
     }
 
-    const task = StudyGPS.getTaskById(currentTaskId);
+    try {
+      const response = await fetch(`/api/tasks/${currentTaskId}`);
+      const data = await response.json();
 
-    if (task) {
+      if (!data.success) {
+        throw new Error(data.error || 'Task not found');
+      }
+
+      const task = data.task;
+
       document.getElementById('taskTitle').textContent = task.title;
-      document.getElementById('taskCourse').textContent = task.course_name;
-      document.getElementById('taskPages').textContent = task.pages;
+      document.getElementById('taskCourse').textContent = task.course_name || 'General Study';
+      document.getElementById('taskPages').textContent =
+        (task.start_page && task.end_page) ? `Pages ${task.start_page}–${task.end_page}` : '';
 
       plannedMinutes = task.estimated_minutes || 50;
       totalSeconds = plannedMinutes * 60;
@@ -180,6 +187,14 @@
 
       document.getElementById('taskIdMeta').textContent =
         `Task ID: #${task.id}`;
+
+    } catch (error) {
+      console.error('Failed to load task:', error);
+      document.getElementById('taskTitle').textContent = 'Task not found';
+      document.getElementById('taskCourse').textContent = '';
+      document.getElementById('taskPages').textContent =
+        `No task with ID #${currentTaskId}. Try timer.html?task_id=<a real task id>`;
+      document.getElementById('btnStart').disabled = true;
     }
 
     updateDisplay();
@@ -283,7 +298,7 @@
     console.log("Actual minutes:", actualMinutes);
 
     try {
-      const response = await fetch('http://localhost:3000/api/study-sessions', {
+      const response = await fetch('/api/study-sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

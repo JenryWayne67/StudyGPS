@@ -12,14 +12,19 @@ const path = require('path');
 const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const Database = require('better-sqlite3');
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
 const courseRoutes = require('./backend/routes/courses');
 const materialRoutes = require('./backend/routes/materials');
+const taskRoutes = require('./backend/routes/tasks');
+const { upsertGoogleUser } = require('./backend/lib/users');
 console.log('MATERIAL ROUTES TYPE:', typeof materialRoutes);
 console.log('MATERIAL ROUTES:', materialRoutes);
 
 const frontendPath = path.join(__dirname, 'frontend');
+const dbPath = path.join(__dirname, 'database/studygps.db');
+const db = new Database(dbPath);
 
 // Trust reverse proxy for secure cookies and https URLs
 app.set('trust proxy', 1);
@@ -46,13 +51,19 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport serialization
+// Passport serialization - the session cookie only ever carries the
+// database user id; every request re-reads the real row from `users`.
 passport.serializeUser((user, done) => {
-  done(null, user);
+  done(null, user.id);
 });
 
-passport.deserializeUser((user, done) => {
-  done(null, user);
+passport.deserializeUser((id, done) => {
+  try {
+    const dbUser = db.prepare(`SELECT id, google_id, name, email FROM users WHERE id = ?`).get(id);
+    done(null, dbUser || null);
+  } catch (err) {
+    done(err);
+  }
 });
 
 // Google OAuth credentials configuration
@@ -69,8 +80,19 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         proxy: true
       },
       (accessToken, refreshToken, profile, done) => {
-        // Return authenticated Google user profile
-        return done(null, profile);
+        // Turn the Google profile into (or match it to) a real row in
+        // the `users` table - this is what actually makes login "real"
+        // instead of just holding the OAuth profile in the cookie.
+        try {
+          const dbUser = upsertGoogleUser(db, {
+            googleId: profile.id,
+            name: profile.displayName || 'Google User',
+            email: (profile.emails && profile.emails[0] && profile.emails[0].value) || null
+          });
+          return done(null, dbUser);
+        } catch (err) {
+          return done(err);
+        }
       }
     )
   );
@@ -87,6 +109,9 @@ app.use('/api/courses', courseRoutes);
 
 // Mount Material routes
 app.use('/api/materials', materialRoutes);
+
+// Mount Task routes
+app.use('/api/tasks', taskRoutes);
 
 // Serve static frontend assets
 app.use(express.static(frontendPath));
