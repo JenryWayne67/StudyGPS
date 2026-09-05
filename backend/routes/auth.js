@@ -1,6 +1,13 @@
 const express = require('express');
+const path = require('path');
 const passport = require('passport');
+const Database = require('better-sqlite3');
+const { upsertGoogleUser } = require('../lib/users');
+
 const router = express.Router();
+
+const dbPath = path.join(__dirname, '../../database/studygps.db');
+const db = new Database(dbPath);
 
 // Middleware to check if Google Strategy is configured
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '817397034800-uruk0oe4n0f33au5nmm4uvlunutu6mge.apps.googleusercontent.com';
@@ -39,18 +46,25 @@ const ensureGoogleConfigured = (req, res, next) => {
   next();
 };
 
-// Dev fallback quick login for preview testing when credentials aren't set
+// Dev fallback quick login for preview testing when credentials aren't set.
+// Still goes through the same users-table upsert as real Google login, so
+// it produces a real, persisted user - not just a session-only fake.
 router.get('/dev-login', (req, res) => {
-  const demoUser = {
-    id: 'google-demo-101',
-    displayName: 'Alex Morgan',
-    emails: [{ value: 'alex.morgan@university.edu' }],
-    photos: [{ value: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80' }]
-  };
-  req.login(demoUser, (err) => {
-    if (err) return res.redirect('/index.html');
-    res.redirect('/dashboard.html');
-  });
+  try {
+    const dbUser = upsertGoogleUser(db, {
+      googleId: 'google-demo-101',
+      name: 'Alex Morgan',
+      email: 'alex.morgan@university.edu'
+    });
+
+    req.login(dbUser, (err) => {
+      if (err) return res.redirect('/index.html');
+      res.redirect('/dashboard.html');
+    });
+  } catch (error) {
+    console.error('Dev login error:', error);
+    res.redirect('/index.html');
+  }
 });
 
 // Trigger Google Login
