@@ -3,14 +3,11 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
-const Database = require('better-sqlite3');
 const { execFileSync } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 router.use(requireAuth);
 
@@ -32,29 +29,19 @@ function materialOwnedByUser(materialId, userId) {
 
 // ==========================================
 // PDF UPLOAD CONFIGURATION
+//
+// Uploaded PDFs are held in memory only long enough to be written into
+// the `materials.file_data` column (see database/schema.sql) instead of
+// a local uploads/ folder. A folder on disk doesn't survive Render's
+// ephemeral filesystem (wiped on every restart/redeploy/sleep), and
+// wouldn't survive at all once the app can run on more than one host -
+// storing the bytes in the same database as everything else means a PDF
+// persists exactly as reliably as the rest of a user's data, with
+// nothing extra to configure.
 // ==========================================
 
-const uploadDir = path.join(__dirname, '../../uploads');
-
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-
-    filename: (req, file, cb) => {
-        const safeName = file.originalname
-            .replace(/[^a-zA-Z0-9.-]/g, '_');
-
-        cb(null, Date.now() + '-' + safeName);
-    }
-});
-
 const upload = multer({
-    storage: storage,
+    storage: multer.memoryStorage(),
 
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'application/pdf') {
@@ -73,7 +60,7 @@ const upload = multer({
 // GET /api/materials
 // ==========================================
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const courseId = Number(req.query.course_id);
         const userId = req.user.id;
@@ -81,16 +68,15 @@ router.get('/', (req, res) => {
         let materials;
 
         if (courseId) {
-            if (!courseBelongsToUser(courseId, userId)) {
+            if (!(await courseBelongsToUser(courseId, userId))) {
                 return res.status(404).json({ success: false, error: 'Course not found' });
             }
 
-            materials = db.prepare(`
+            materials = await db.prepare(`
                 SELECT
                     id,
                     course_id,
                     filename,
-                    file_path,
                     uploaded_at,
                     status,
                     page_count,
@@ -100,12 +86,11 @@ router.get('/', (req, res) => {
                 ORDER BY id DESC
             `).all(courseId);
         } else {
-            materials = db.prepare(`
+            materials = await db.prepare(`
                 SELECT
                     m.id,
                     m.course_id,
                     m.filename,
-                    m.file_path,
                     m.uploaded_at,
                     m.status,
                     m.page_count,
@@ -138,12 +123,11 @@ router.get('/', (req, res) => {
 // JSON material creation
 // ==========================================
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const {
             course_id,
             filename,
-            file_path,
             status,
             page_count,
             file_size
@@ -165,7 +149,7 @@ router.post('/', (req, res) => {
             });
         }
 
-        const course = courseBelongsToUser(courseId, req.user.id);
+        const course = await courseBelongsToUser(courseId, req.user.id);
 
         if (!course) {
             return res.status(404).json({
@@ -174,31 +158,28 @@ router.post('/', (req, res) => {
             });
         }
 
-        const result = db.prepare(`
+        const result = await db.prepare(`
             INSERT INTO materials (
                 course_id,
                 filename,
-                file_path,
                 status,
                 page_count,
                 file_size
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         `).run(
             courseId,
             filename.trim(),
-            file_path || null,
             status || 'pending',
             page_count || null,
             file_size || null
         );
 
-        const material = db.prepare(`
+        const material = await db.prepare(`
             SELECT
                 id,
                 course_id,
                 filename,
-                file_path,
                 uploaded_at,
                 status,
                 page_count,
@@ -228,28 +209,20 @@ router.post('/', (req, res) => {
 // ACTUAL PDF UPLOAD
 // ==========================================
 
-router.post('/upload', upload.single('pdf'), (req, res) => {
+router.post('/upload', upload.single('pdf'), async (req, res) => {
     try {
         const courseId = Number(req.body.course_id);
 
         if (!courseId) {
-            if (req.file) {
-                fs.unlinkSync(req.file.path);
-            }
-
             return res.status(400).json({
                 success: false,
                 error: 'course_id is required'
             });
         }
 
-        const course = courseBelongsToUser(courseId, req.user.id);
+        const course = await courseBelongsToUser(courseId, req.user.id);
 
         if (!course) {
-            if (req.file) {
-                fs.unlinkSync(req.file.path);
-            }
-
             return res.status(404).json({
                 success: false,
                 error: 'Course not found'
@@ -263,11 +236,16 @@ router.post('/upload', upload.single('pdf'), (req, res) => {
             });
         }
 
-        const result = db.prepare(`
+        // req.file.buffer is the whole PDF's bytes, held in memory only for
+        // this request (multer.memoryStorage() - see the upload config
+        // above) - stored straight into the database as a BLOB rather than
+        // a local file, so it survives restarts/redeploys the same way the
+        // rest of the user's data does.
+        const result = await db.prepare(`
             INSERT INTO materials (
                 course_id,
                 filename,
-                file_path,
+                file_data,
                 status,
                 page_count,
                 file_size
@@ -276,18 +254,17 @@ router.post('/upload', upload.single('pdf'), (req, res) => {
         `).run(
             courseId,
             req.file.originalname,
-            req.file.path,
+            req.file.buffer,
             'uploaded',
             null,
             req.file.size
         );
 
-        const material = db.prepare(`
+        const material = await db.prepare(`
             SELECT
                 id,
                 course_id,
                 filename,
-                file_path,
                 uploaded_at,
                 status,
                 page_count,
@@ -304,10 +281,6 @@ router.post('/upload', upload.single('pdf'), (req, res) => {
 
     } catch (error) {
         console.error('PDF upload error:', error);
-
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
 
         res.status(500).json({
             success: false,
@@ -545,21 +518,22 @@ function runSectionTaskManager(sectionRows) {
 // Insert tasks for a batch of already-persisted sections, in one small
 // transaction. Separate from section/page insertion so a slow/failing
 // C++ call never happens while a write transaction is open.
-function insertTasksForSections(insertedSections) {
+async function insertTasksForSections(insertedSections) {
     if (insertedSections.length === 0) return [];
 
     const tasksFromCpp = runSectionTaskManager(insertedSections);
 
-    const insertTask = db.prepare(`
-        INSERT INTO tasks (section_id, priority, deadline, status)
-        VALUES (?, ?, NULL, ?)
-    `);
-
-    const applyInsert = db.transaction((rows) => {
-        return rows.map((t) => {
-            const info = insertTask.run(t.section_id, t.priority, t.status);
-            return { id: info.lastInsertRowid, ...t };
-        });
+    const applyInsert = db.transaction(async (tx, rows) => {
+        const insertTask = tx.prepare(`
+            INSERT INTO tasks (section_id, priority, deadline, status)
+            VALUES (?, ?, NULL, ?)
+        `);
+        const out = [];
+        for (const t of rows) {
+            const info = await insertTask.run(t.section_id, t.priority, t.status);
+            out.push({ id: info.lastInsertRowid, ...t });
+        }
+        return out;
     });
 
     return applyInsert(tasksFromCpp);
@@ -583,7 +557,7 @@ router.post('/:id/process', async (req, res) => {
             });
         }
 
-        const material = materialOwnedByUser(materialId, req.user.id);
+const material = await materialOwnedByUser(materialId, req.user.id);
 
         if (!material) {
             return res.status(404).json({
@@ -592,15 +566,17 @@ router.post('/:id/process', async (req, res) => {
             });
         }
 
-        if (!material.file_path || !fs.existsSync(material.file_path)) {
+        if (!material.file_data) {
             return res.status(404).json({
                 success: false,
                 error: 'PDF file not found on server'
             });
         }
 
-        // Read the PDF file
-        const dataBuffer = fs.readFileSync(material.file_path);
+        // material.file_data comes back from the database as an
+        // ArrayBuffer (libsql's BLOB representation) - PDFParse and the
+        // rest of Node's Buffer-based APIs need a real Buffer.
+        const dataBuffer = Buffer.from(material.file_data);
 
         // Create PDF parser
         parser = new PDFParse({
@@ -620,61 +596,62 @@ router.post('/:id/process', async (req, res) => {
         // them. Deliberately does NOT include the C++ task-generation
         // call - that runs an external process and must not happen while
         // a write transaction is open.
-        const applyPagesAndSections = db.transaction(() => {
-            db.prepare(`DELETE FROM material_pages WHERE material_id = ?`).run(materialId);
+const applyPagesAndSections = db.transaction(async (tx) => {
+            await tx.prepare(`DELETE FROM material_pages WHERE material_id = ?`).run(materialId);
 
-            const insertPage = db.prepare(`
+            const insertPage = tx.prepare(`
                 INSERT INTO material_pages (material_id, page_number, content)
                 VALUES (?, ?, ?)
             `);
             for (const p of pages) {
-                insertPage.run(materialId, p.page_number, p.content);
+                await insertPage.run(materialId, p.page_number, p.content);
             }
 
-            const oldSectionIds = db.prepare(`
+            const oldSectionIds = (await tx.prepare(`
                 SELECT id FROM sections WHERE material_id = ?
-            `).all(materialId).map((r) => r.id);
+            `).all(materialId)).map((r) => r.id);
 
             if (oldSectionIds.length > 0) {
                 const sectionPlaceholders = oldSectionIds.map(() => '?').join(',');
 
-                const oldTaskIds = db.prepare(`
+                const oldTaskIds = (await tx.prepare(`
                     SELECT id FROM tasks WHERE section_id IN (${sectionPlaceholders})
-                `).all(...oldSectionIds).map((r) => r.id);
+                `).all(...oldSectionIds)).map((r) => r.id);
 
                 // schedules.task_id and study_sessions.task_id have no
                 // ON DELETE CASCADE (see database/schema.sql), and
-                // better-sqlite3 enforces foreign keys by default - so
-                // re-analyzing (or re-uploading) a material that already
-                // has a generated schedule block or a logged study
-                // session against its old tasks used to fail outright
-                // with "FOREIGN KEY constraint failed" the moment it
-                // tried to delete those old tasks out from under them.
-                // Those rows describe tasks that are about to stop
-                // existing, so they have to go too - reprocessing a
-                // material is meant to replace its old sections/tasks
-                // wholesale, and a schedule row pointing at a deleted
-                // task isn't something to keep around. Re-run "Regenerate
-                // Week" on the Schedule page afterward to reschedule the
-                // freshly generated tasks.
+                // foreign keys are enforced by default - so re-analyzing
+                // (or re-uploading) a material that already has a
+                // generated schedule block or a logged study session
+                // against its old tasks used to fail outright with
+                // "FOREIGN KEY constraint failed" the moment it tried to
+                // delete those old tasks out from under them. Those rows
+                // describe tasks that are about to stop existing, so
+                // they have to go too - reprocessing a material is meant
+                // to replace its old sections/tasks wholesale, and a
+                // schedule row pointing at a deleted task isn't
+                // something to keep around. Re-run "Regenerate Week" on
+                // the Schedule page afterward to reschedule the freshly
+                // generated tasks.
                 if (oldTaskIds.length > 0) {
                     const taskPlaceholders = oldTaskIds.map(() => '?').join(',');
-                    db.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
-                    db.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                    await tx.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                    await tx.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
                 }
 
-                db.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...oldSectionIds);
-                db.prepare(`DELETE FROM sections WHERE id IN (${sectionPlaceholders})`).run(...oldSectionIds);
+                await tx.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...oldSectionIds);
+                await tx.prepare(`DELETE FROM sections WHERE id IN (${sectionPlaceholders})`).run(...oldSectionIds);
             }
 
-            const insertSection = db.prepare(`
+            const insertSection = tx.prepare(`
                 INSERT INTO sections
                     (course_id, material_id, title, start_page, end_page, estimated_minutes, difficulty)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `);
 
-            return detectedSections.map((s) => {
-                const info = insertSection.run(
+            const out = [];
+            for (const s of detectedSections) {
+                const info = await insertSection.run(
                     material.course_id,
                     materialId,
                     s.title,
@@ -683,11 +660,12 @@ router.post('/:id/process', async (req, res) => {
                     s.estimated_minutes,
                     s.difficulty
                 );
-                return { id: info.lastInsertRowid, ...s };
-            });
+                out.push({ id: info.lastInsertRowid, ...s });
+            }
+            return out;
         });
 
-        const insertedSections = applyPagesAndSections();
+        const insertedSections = await applyPagesAndSections();
 
         // Step 2: tasks, produced by the C++ section/task engine - kept
         // separate so a failure here (missing/broken exe) still leaves
@@ -696,7 +674,7 @@ router.post('/:id/process', async (req, res) => {
         let insertedTasks = [];
         let taskGenerationError = null;
         try {
-            insertedTasks = insertTasksForSections(insertedSections);
+            insertedTasks = await insertTasksForSections(insertedSections);
         } catch (err) {
             console.error(`Task generation failed for material ${materialId}:`, err.message);
             taskGenerationError = err.message;
@@ -705,7 +683,7 @@ router.post('/:id/process', async (req, res) => {
         // Step 3: mark the material processed regardless of task-generation
         // outcome - the sections/pages are real and saved; tasks can be
         // retried via POST /:id/regenerate-tasks without reprocessing the PDF.
-        db.prepare(`
+        await db.prepare(`
             UPDATE materials
             SET page_count = ?, status = ?
             WHERE id = ?
@@ -748,16 +726,16 @@ router.post('/:id/process', async (req, res) => {
 // from /process, or to pick up a rebuilt sectionTaskManager.exe.
 // ==========================================
 
-router.post('/:id/regenerate-tasks', (req, res) => {
+router.post('/:id/regenerate-tasks', async (req, res) => {
     try {
         const materialId = Number(req.params.id);
-        const material = materialOwnedByUser(materialId, req.user.id);
+        const material = await materialOwnedByUser(materialId, req.user.id);
 
         if (!material) {
             return res.status(404).json({ success: false, error: 'Material not found' });
         }
 
-        const sections = db.prepare(`
+        const sections = await db.prepare(`
             SELECT id, title, start_page, end_page, estimated_minutes, difficulty
             FROM sections WHERE material_id = ?
         `).all(materialId);
@@ -772,25 +750,25 @@ router.post('/:id/regenerate-tasks', (req, res) => {
         // DELETE FROM tasks below fails with "FOREIGN KEY constraint
         // failed" the moment any of those tasks has a schedule block or
         // a logged study session against it.
-        const clearOldTasks = db.transaction(() => {
+        const clearOldTasks = db.transaction(async (tx) => {
             const sectionIds = sections.map((s) => s.id);
             const sectionPlaceholders = sectionIds.map(() => '?').join(',');
 
-            const oldTaskIds = db.prepare(`
+            const oldTaskIds = (await tx.prepare(`
                 SELECT id FROM tasks WHERE section_id IN (${sectionPlaceholders})
-            `).all(...sectionIds).map((r) => r.id);
+            `).all(...sectionIds)).map((r) => r.id);
 
             if (oldTaskIds.length > 0) {
                 const taskPlaceholders = oldTaskIds.map(() => '?').join(',');
-                db.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
-                db.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                await tx.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                await tx.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
             }
 
-            db.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...sectionIds);
+            await tx.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...sectionIds);
         });
-        clearOldTasks();
+        await clearOldTasks();
 
-        const insertedTasks = insertTasksForSections(sections);
+        const insertedTasks = await insertTasksForSections(sections);
 
         res.json({
             success: true,
@@ -811,7 +789,7 @@ router.post('/:id/regenerate-tasks', (req, res) => {
 // processed yet.
 // ==========================================
 
-router.get('/:id/sections', (req, res) => {
+router.get('/:id/sections', async (req, res) => {
     try {
         const materialId = Number(req.params.id);
 
@@ -822,7 +800,7 @@ router.get('/:id/sections', (req, res) => {
             });
         }
 
-        const material = materialOwnedByUser(materialId, req.user.id);
+        const material = await materialOwnedByUser(materialId, req.user.id);
 
         if (!material) {
             return res.status(404).json({
@@ -831,7 +809,7 @@ router.get('/:id/sections', (req, res) => {
             });
         }
 
-        const sections = db.prepare(`
+        const sections = await db.prepare(`
             SELECT
                 s.id,
                 s.title,

@@ -10,14 +10,11 @@
 
 const express = require('express');
 const path = require('path');
-const Database = require('better-sqlite3');
 const { execFileSync } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 router.use(requireAuth);
 
@@ -32,8 +29,8 @@ const DEFAULT_PREFERENCES = {
 
 const DAYS_TO_PLAN = 14; // how far ahead to open up study slots
 
-function getPreferences(userId) {
-    const row = db.prepare(`
+async function getPreferences(userId) {
+    const row = await db.prepare(`
         SELECT study_days, preferred_start, preferred_end, session_length, break_length, max_daily_minutes
         FROM user_preferences
         WHERE user_id = ?
@@ -116,7 +113,7 @@ function buildSlotsAndDateMap(preferences) {
 // Real, pending tasks for this user, joined with their section (for
 // name/pages/estimated minutes/difficulty) - exactly what the scheduler
 // needs, nothing invented.
-function getPendingTasks(userId) {
+async function getPendingTasks(userId) {
     return db.prepare(`
         SELECT
             t.id,
@@ -209,11 +206,11 @@ function runScheduler({ preferences, tasks, slots }) {
 // study-time preferences. Idempotent: only replaces THIS user's own
 // schedule rows.
 // ==========================================
-router.post('/generate', (req, res) => {
+router.post('/generate', async (req, res) => {
     try {
         const userId = req.user.id;
-        const preferences = getPreferences(userId);
-        const tasks = getPendingTasks(userId);
+        const preferences = await getPreferences(userId);
+        const tasks = await getPendingTasks(userId);
         const { slots, dateByDayIndex } = buildSlotsAndDateMap(preferences);
 
         if (tasks.length === 0) {
@@ -222,31 +219,32 @@ router.post('/generate', (req, res) => {
 
         const { sessions, warnings } = runScheduler({ preferences, tasks, slots });
 
-        const replace = db.transaction(() => {
+        const replace = db.transaction(async (tx) => {
             // Clear only this user's existing schedule rows before
             // rebuilding - never touches other users' schedules.
-            const oldIds = db.prepare(`
+            const oldIds = (await tx.prepare(`
                 SELECT sch.id
                 FROM schedules sch
                 JOIN tasks t ON t.id = sch.task_id
                 JOIN sections s ON s.id = t.section_id
                 JOIN courses c ON c.id = s.course_id
                 WHERE c.user_id = ?
-            `).all(userId).map((r) => r.id);
+            `).all(userId)).map((r) => r.id);
 
             if (oldIds.length > 0) {
                 const placeholders = oldIds.map(() => '?').join(',');
-                db.prepare(`DELETE FROM schedules WHERE id IN (${placeholders})`).run(...oldIds);
+                await tx.prepare(`DELETE FROM schedules WHERE id IN (${placeholders})`).run(...oldIds);
             }
 
-            const insertSession = db.prepare(`
+            const insertSession = tx.prepare(`
                 INSERT INTO schedules (task_id, date, start_time, end_time, start_page, end_page)
                 VALUES (?, ?, ?, ?, ?, ?)
             `);
 
-            const inserted = sessions.map((s) => {
+            const inserted = [];
+            for (const s of sessions) {
                 const date = dateByDayIndex.get(s.day_index) || null;
-                const info = insertSession.run(
+                const info = await insertSession.run(
                     s.task_id,
                     date,
                     minutesToTime(s.start_minutes),
@@ -254,7 +252,7 @@ router.post('/generate', (req, res) => {
                     s.start_page >= 0 ? s.start_page : null,
                     s.end_page >= 0 ? s.end_page : null
                 );
-                return {
+                inserted.push({
                     id: info.lastInsertRowid,
                     task_id: s.task_id,
                     date,
@@ -264,13 +262,13 @@ router.post('/generate', (req, res) => {
                     end_page: s.end_page >= 0 ? s.end_page : null,
                     part: s.part,
                     total_parts: s.total_parts
-                };
-            });
+                });
+            }
 
             return inserted;
         });
 
-        const schedule = replace();
+        const schedule = await replace();
 
         res.json({
             success: true,
@@ -290,9 +288,9 @@ router.post('/generate', (req, res) => {
 // task/section/course info for the dashboard/schedule pages to render
 // without a second round trip.
 // ==========================================
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
-        const rows = db.prepare(`
+        const rows = await db.prepare(`
             SELECT
                 sch.id,
                 sch.task_id,

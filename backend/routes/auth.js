@@ -1,15 +1,11 @@
 const express = require('express');
-const path = require('path');
 const passport = require('passport');
-const Database = require('better-sqlite3');
 const { upsertGoogleUser, findUserByEmail, createLocalUser, toPublicUser, hasCompletedOnboarding, updateUserName } = require('../lib/users');
 const { hashPassword, verifyPassword } = require('../lib/passwords');
 const { rateLimit } = require('../lib/rateLimit');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 // Real values only ever come from .env now (see .env.example) - no secret
 // literals live in source anymore.
@@ -52,17 +48,18 @@ const ensureGoogleConfigured = (req, res, next) => {
 // Dev fallback quick login for preview testing when credentials aren't set.
 // Still goes through the same users-table upsert as real Google login, so
 // it produces a real, persisted user - not just a session-only fake.
-router.get('/dev-login', (req, res) => {
+router.get('/dev-login', async (req, res) => {
   try {
-    const dbUser = upsertGoogleUser(db, {
+    const dbUser = await upsertGoogleUser(db, {
       googleId: 'google-demo-101',
       name: 'Alex Morgan',
       email: 'alex.morgan@university.edu'
     });
 
+    const needsInterview = !(await hasCompletedOnboarding(db, dbUser.id));
     req.login(dbUser, (err) => {
       if (err) return res.redirect('/index.html');
-      res.redirect(hasCompletedOnboarding(db, dbUser.id) ? '/dashboard.html' : '/interview.html');
+      res.redirect(needsInterview ? '/interview.html' : '/dashboard.html');
     });
   } catch (error) {
     console.error('Dev login error:', error);
@@ -81,7 +78,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Email/password signup - creates a real row in `users` alongside the
 // Google-login path (upsertGoogleUser). A user can also later "link"
 // Google to the same email via upsertGoogleUser's email-match fallback.
-router.post('/signup', authAttemptLimiter, (req, res) => {
+router.post('/signup', authAttemptLimiter, async (req, res) => {
   try {
     const name = (req.body.name || '').trim();
     const email = (req.body.email || '').trim().toLowerCase();
@@ -97,20 +94,21 @@ router.post('/signup', authAttemptLimiter, (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
 
-    const existing = findUserByEmail(db, email);
+    const existing = await findUserByEmail(db, email);
     if (existing) {
       return res.status(409).json({ error: 'An account with that email already exists.' });
     }
 
     const passwordHash = hashPassword(password);
-    const dbUser = createLocalUser(db, { name, email, passwordHash });
+    const dbUser = await createLocalUser(db, { name, email, passwordHash });
+    // A brand-new signup never has a preferences row yet, so this is
+    // always true - but compute it the same way as everywhere else
+    // rather than hardcoding, in case that ever changes.
+    const needsInterview = !(await hasCompletedOnboarding(db, dbUser.id));
 
     req.login(dbUser, (err) => {
       if (err) return res.status(500).json({ error: 'Account created, but login failed. Please try logging in.' });
-      // A brand-new signup never has a preferences row yet, so this is
-      // always true - but compute it the same way as everywhere else
-      // rather than hardcoding, in case that ever changes.
-      res.status(201).json({ user: toPublicUser(dbUser), needsInterview: !hasCompletedOnboarding(db, dbUser.id) });
+      res.status(201).json({ user: toPublicUser(dbUser), needsInterview });
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -119,7 +117,7 @@ router.post('/signup', authAttemptLimiter, (req, res) => {
 });
 
 // Email/password login
-router.post('/login', authAttemptLimiter, (req, res) => {
+router.post('/login', authAttemptLimiter, async (req, res) => {
   try {
     const email = (req.body.email || '').trim().toLowerCase();
     const password = req.body.password || '';
@@ -128,7 +126,7 @@ router.post('/login', authAttemptLimiter, (req, res) => {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const dbUser = findUserByEmail(db, email);
+    const dbUser = await findUserByEmail(db, email);
 
     // Same generic error whether the email doesn't exist or the password
     // doesn't match, and whether the account has no password set (e.g. a
@@ -137,9 +135,10 @@ router.post('/login', authAttemptLimiter, (req, res) => {
       return res.status(401).json({ error: 'Incorrect email or password.' });
     }
 
+    const needsInterview = !(await hasCompletedOnboarding(db, dbUser.id));
     req.login(dbUser, (err) => {
       if (err) return res.status(500).json({ error: 'Login failed. Please try again.' });
-      res.json({ user: toPublicUser(dbUser), needsInterview: !hasCompletedOnboarding(db, dbUser.id) });
+      res.json({ user: toPublicUser(dbUser), needsInterview });
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -154,21 +153,22 @@ router.get('/google', ensureGoogleConfigured, passport.authenticate('google', {
 }));
 
 // Google Callback Route
-router.get('/google/callback', 
+router.get('/google/callback',
   ensureGoogleConfigured,
   passport.authenticate('google', { failureRedirect: '/index.html' }),
-  (req, res) => {
+  async (req, res) => {
     // First-time sign-ins (no user_preferences row yet) go through the
     // interview so we can capture their name/study preferences before the
     // scheduler needs them; returning users skip straight to the dashboard.
-    res.redirect(hasCompletedOnboarding(db, req.user.id) ? '/dashboard.html' : '/interview.html');
+    const needsInterview = !(await hasCompletedOnboarding(db, req.user.id));
+    res.redirect(needsInterview ? '/interview.html' : '/dashboard.html');
   }
 );
 
 // Update the logged-in user's display name (used by the interview page,
 // which lets a person confirm/edit the name pulled from Google or typed
 // during signup before it's saved for good).
-router.put('/me/name', (req, res) => {
+router.put('/me/name', async (req, res) => {
   if (!(req.isAuthenticated && req.isAuthenticated())) {
     return res.status(401).json({ error: 'Not logged in.' });
   }
@@ -176,17 +176,17 @@ router.put('/me/name', (req, res) => {
   if (!name) {
     return res.status(400).json({ error: 'Name is required.' });
   }
-  const updated = updateUserName(db, req.user.id, name);
+  const updated = await updateUserName(db, req.user.id, name);
   res.json({ user: toPublicUser(updated) });
 });
 
 // Get Currently Logged-In User
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
     res.json({
       loggedIn: true,
       user: toPublicUser(req.user),
-      needsInterview: !hasCompletedOnboarding(db, req.user.id)
+      needsInterview: !(await hasCompletedOnboarding(db, req.user.id))
     });
   } else {
     res.status(401).json({ loggedIn: false });

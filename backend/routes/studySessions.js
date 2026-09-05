@@ -1,14 +1,11 @@
 
 const express = require('express');
 const path = require('path');
-const Database = require('better-sqlite3');
 const { execFile } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 router.use(requireAuth);
 
@@ -24,7 +21,7 @@ function taskOwnedByUser(taskId, userId) {
 }
 
 // POST /api/study-sessions
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const {
             task_id,
@@ -44,7 +41,7 @@ router.post('/', (req, res) => {
         }
 
         // Get task using the columns that actually exist, scoped to this user
-        const task = taskOwnedByUser(task_id, req.user.id);
+        const task = await taskOwnedByUser(task_id, req.user.id);
 
         if (!task) {
             return res.status(404).json({
@@ -66,7 +63,7 @@ router.post('/', (req, res) => {
         let taskName = `Task ${task.id}`;
 
         try {
-            const section = db.prepare(`
+            const section = await db.prepare(`
                 SELECT title
                 FROM sections
                 WHERE id = ?
@@ -88,7 +85,7 @@ router.post('/', (req, res) => {
                 String(plannedMinutes),
                 String(actualSeconds)
             ],
-            (error, stdout, stderr) => {
+            async (error, stdout, stderr) => {
 
                 if (error) {
                     console.error('C++ engine error:', error);
@@ -124,56 +121,61 @@ router.post('/', (req, res) => {
                 const cppActualMinutes = Number(resultMatch[3]);
                 const cppCompleted = Number(resultMatch[4]);
 
-                // Save result to SQLite
-                const stmt = db.prepare(`
-                    INSERT INTO study_sessions
-                    (
-                        task_id,
-                        planned_minutes,
-                        actual_minutes,
-                        start_time,
-                        end_time,
-                        completed
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `);
+                try {
+                    // Save result to SQLite
+                    const stmt = db.prepare(`
+                        INSERT INTO study_sessions
+                        (
+                            task_id,
+                            planned_minutes,
+                            actual_minutes,
+                            start_time,
+                            end_time,
+                            completed
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    `);
 
-                const result = stmt.run(
-                    cppTaskId,
-                    cppPlannedMinutes,
-                    cppActualMinutes,
-                    start_time || null,
-                    end_time || null,
-                    cppCompleted
-                );
+                    const result = await stmt.run(
+                        cppTaskId,
+                        cppPlannedMinutes,
+                        cppActualMinutes,
+                        start_time || null,
+                        end_time || null,
+                        cppCompleted
+                    );
 
-                // The C++ engine's completion verdict is what actually
-                // moves the task forward - reflect it on the task itself
-                // so tasks.html/dashboard.html show real status, not just
-                // a logged session.
-                db.prepare(`
-                    UPDATE tasks
-                    SET status = ?
-                    WHERE id = ? AND status != 'Completed'
-                `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
+                    // The C++ engine's completion verdict is what actually
+                    // moves the task forward - reflect it on the task itself
+                    // so tasks.html/dashboard.html show real status, not just
+                    // a logged session.
+                    await db.prepare(`
+                        UPDATE tasks
+                        SET status = ?
+                        WHERE id = ? AND status != 'Completed'
+                    `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
 
-                const newSession = db.prepare(`
-                    SELECT *
-                    FROM study_sessions
-                    WHERE id = ?
-                `).get(result.lastInsertRowid);
+                    const newSession = await db.prepare(`
+                        SELECT *
+                        FROM study_sessions
+                        WHERE id = ?
+                    `).get(result.lastInsertRowid);
 
-                res.status(201).json({
-                    success: true,
-                    message: 'Study session recorded by C++ engine',
-                    session: newSession,
-                    cpp: {
-                        task_id: cppTaskId,
-                        planned_minutes: cppPlannedMinutes,
-                        actual_minutes: cppActualMinutes,
-                        completed: cppCompleted
-                    }
-                });
+                    res.status(201).json({
+                        success: true,
+                        message: 'Study session recorded by C++ engine',
+                        session: newSession,
+                        cpp: {
+                            task_id: cppTaskId,
+                            planned_minutes: cppPlannedMinutes,
+                            actual_minutes: cppActualMinutes,
+                            completed: cppCompleted
+                        }
+                    });
+                } catch (dbError) {
+                    console.error('Study session save error:', dbError);
+                    res.status(500).json({ success: false, error: dbError.message });
+                }
             }
         );
 
@@ -189,9 +191,9 @@ router.post('/', (req, res) => {
 
 
 // GET /api/study-sessions
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
-        const sessions = db.prepare(`
+        const sessions = await db.prepare(`
             SELECT ss.*
             FROM study_sessions ss
             JOIN tasks t ON t.id = ss.task_id

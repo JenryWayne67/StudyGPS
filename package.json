@@ -5,11 +5,11 @@
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
-    "build": "echo 'Build complete'",
+    "build": "g++ -std=c++17 -O2 -o cpp_engine/sectionTaskManager.exe cpp_engine/sectionTaskManager.cpp && g++ -std=c++17 -O2 -o cpp_engine/scheduler.exe cpp_engine/scheduler.cpp && g++ -std=c++17 -O2 -o cpp_engine/studyTracker.exe cpp_engine/studyTracker.cpp && g++ -std=c++17 -O2 -o cpp_engine/progressReport.exe cpp_engine/progressReport.cpp",
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "@libsql/client": "^0.18.0",
     "cors": "^2.8.6",
     "express": "^4.21.2",
     "express-session": "^1.19.0",

@@ -13,14 +13,11 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
 const { execFileSync } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 router.use(requireAuth);
 
@@ -31,7 +28,7 @@ router.use(requireAuth);
 // sections.course_id is used directly rather than going through
 // materials - some legacy/manually-seeded sections have no material_id,
 // but every section has a course_id.
-function getTasksForReport(userId) {
+async function getTasksForReport(userId) {
     return db.prepare(`
         SELECT
             t.id AS task_id,
@@ -128,9 +125,9 @@ function runProgressReport(taskRows) {
 // study_sessions rows. A user with zero tasks yet gets an all-zero report
 // (not an error), so a brand-new account sees an honest empty state
 // instead of a crash.
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
-        const taskRows = getTasksForReport(req.user.id);
+        const taskRows = await getTasksForReport(req.user.id);
 
         if (taskRows.length === 0) {
             return res.json({

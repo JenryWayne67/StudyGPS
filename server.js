@@ -4,17 +4,22 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3000;
+// Render (and most hosts) assign the port at runtime via $PORT and expect
+// the app to listen on exactly that port - hardcoding 3000 would make the
+// deployed service unreachable. Local dev has no PORT set, so it still
+// falls back to 3000 exactly as before.
+const PORT = process.env.PORT || 3000;
 
 
 app.use(cors());
 
 
 const path = require('path');
+const fs = require('fs');
 const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const Database = require('better-sqlite3');
+const { db, client } = require('./backend/lib/db');
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
 const courseRoutes = require('./backend/routes/courses');
@@ -29,8 +34,70 @@ console.log('MATERIAL ROUTES TYPE:', typeof materialRoutes);
 console.log('MATERIAL ROUTES:', materialRoutes);
 
 const frontendPath = path.join(__dirname, 'frontend');
-const dbPath = path.join(__dirname, 'database/studygps.db');
-const db = new Database(dbPath);
+
+// On a database that's ever empty at startup - a brand-new Turso database
+// on first deploy, or (previously) Render's ephemeral local-disk fallback -
+// "does the users table already exist" has to be checked every time the
+// server boots, not assumed. Without this, a fresh/empty database means
+// every single query in the app fails with "no such table: users" instead
+// of the app just working again with an empty database.
+async function ensureSchema() {
+  const usersTable = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'`
+  ).get();
+
+  if (!usersTable) {
+    const schemaPath = path.join(__dirname, 'database/schema.sql');
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await client.executeMultiple(schemaSql);
+    console.log('Database schema initialized (empty/fresh database detected).');
+    return;
+  }
+
+  // Existing database (e.g. the real local studygps.db from before this
+  // upgrade) - it has a `users` table already, but may predate columns
+  // schema.sql has grown since. Add anything missing rather than
+  // requiring a full reset, so real existing data is never at risk.
+  await migrateExistingDatabase();
+}
+
+// Lightweight, additive migrations for a database created by an older
+// version of schema.sql. Each one only runs if it hasn't already.
+async function migrateExistingDatabase() {
+  const materialsCols = await client.execute(`PRAGMA table_info(materials)`);
+  const columnNames = materialsCols.rows.map((r) => r.name);
+
+  if (!columnNames.includes('file_data')) {
+    await client.execute(`ALTER TABLE materials ADD COLUMN file_data BLOB`);
+    console.log('Migrated: added materials.file_data column.');
+  }
+
+  // Backfill: materials uploaded before this change have their PDF bytes
+  // on disk at the old file_path, not in the database yet. Read each one
+  // in now so existing uploads (re-analyze, etc.) keep working without
+  // the user having to re-upload everything. Best-effort - a file that's
+  // moved or missing just logs a warning instead of blocking startup.
+  const legacyMaterials = await db.prepare(`
+    SELECT id, file_path FROM materials WHERE file_path IS NOT NULL AND file_data IS NULL
+  `).all();
+
+  for (const m of legacyMaterials) {
+    try {
+      if (fs.existsSync(m.file_path)) {
+        const bytes = fs.readFileSync(m.file_path);
+        await db.prepare(`UPDATE materials SET file_data = ? WHERE id = ?`).run(bytes, m.id);
+      } else {
+        console.warn(`Migration: material ${m.id}'s old file (${m.file_path}) no longer exists on disk - it will need to be re-uploaded.`);
+      }
+    } catch (err) {
+      console.warn(`Migration: couldn't backfill material ${m.id} from ${m.file_path}:`, err.message);
+    }
+  }
+
+  if (legacyMaterials.length > 0) {
+    console.log(`Migrated ${legacyMaterials.length} existing material(s) from disk into the database.`);
+  }
+}
 
 // Trust reverse proxy for secure cookies and https URLs
 app.set('trust proxy', 1);
@@ -71,12 +138,9 @@ passport.serializeUser((user, done) => {
 });
 
 passport.deserializeUser((id, done) => {
-  try {
-    const dbUser = db.prepare(`SELECT id, google_id, name, email FROM users WHERE id = ?`).get(id);
-    done(null, dbUser || null);
-  } catch (err) {
-    done(err);
-  }
+  db.prepare(`SELECT id, google_id, name, email FROM users WHERE id = ?`).get(id)
+    .then((dbUser) => done(null, dbUser || null))
+    .catch((err) => done(err));
 });
 
 // Google OAuth credentials configuration - real values only ever come from
@@ -97,16 +161,13 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         // Turn the Google profile into (or match it to) a real row in
         // the `users` table - this is what actually makes login "real"
         // instead of just holding the OAuth profile in the cookie.
-        try {
-          const dbUser = upsertGoogleUser(db, {
-            googleId: profile.id,
-            name: profile.displayName || 'Google User',
-            email: (profile.emails && profile.emails[0] && profile.emails[0].value) || null
-          });
-          return done(null, dbUser);
-        } catch (err) {
-          return done(err);
-        }
+        upsertGoogleUser(db, {
+          googleId: profile.id,
+          name: profile.displayName || 'Google User',
+          email: (profile.emails && profile.emails[0] && profile.emails[0].value) || null
+        })
+          .then((dbUser) => done(null, dbUser))
+          .catch((err) => done(err));
       }
     )
   );
@@ -197,6 +258,18 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`StudyGPS server running on http://0.0.0.0:${PORT}`);
+// The server only starts accepting requests once the database schema is
+// confirmed to exist - on a brand-new Turso database (first deploy, or a
+// fresh free-tier account) there's no `users` table yet until this runs,
+// and every route ultimately depends on it.
+async function start() {
+  await ensureSchema();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`StudyGPS server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start StudyGPS server:', err);
+  process.exit(1);
 });

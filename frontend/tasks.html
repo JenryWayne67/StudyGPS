@@ -227,6 +227,15 @@
       return urlParams.get(name);
     }
 
+    // Same clock formatting Schedule/Dashboard use, so a task's card here
+    // reads identically to its block over there.
+    function formatClock(hhmm) {
+      const [h, m] = String(hhmm).split(':').map(Number);
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+
     async function fetchJSON(url, options) {
       const res = await fetch(url, { credentials: 'same-origin', ...options });
       if (res.status === 401) {
@@ -265,20 +274,25 @@
     // person explicitly presses Resume, instead of silently starting a
     // real, logged study session on their behalf just for clicking a link.
     // overrideMinutes: when arriving from a specific Schedule/Dashboard
-    // session block (via ?minutes=), use THAT block's own length instead
-    // of the task's full estimated_minutes. A task longer than one study
-    // session gets split into multiple session-length chunks by the C++
-    // scheduler (cpp_engine/scheduler.cpp), so the block someone actually
-    // clicked can be shorter than the task's total - without this the
-    // timer always counted down the full task length no matter which
-    // block was clicked, never matching the duration shown on Schedule.
+    // session block (via ?minutes=), use THAT block's own length. A task
+    // longer than one study session gets split into multiple session-
+    // length chunks by the C++ scheduler (cpp_engine/scheduler.cpp), each
+    // its own row in `schedules` - task.session_minutes (from GET
+    // /api/tasks) is that task's own next-scheduled chunk length, so
+    // clicking "Start Studying" right here on the Tasks page now matches
+    // it too, not just links arriving from elsewhere. Only a task with no
+    // scheduled session at all (never added to the Schedule) falls back
+    // to the section's full estimated_minutes - there's no chunk to match
+    // yet in that case.
     function startTaskTimer(taskId, autoStart = true, overrideMinutes = null) {
       activeTaskId = Number(taskId);
       const task = allTasksCache.find(t => Number(t.id) === activeTaskId);
       if (!task) return;
 
       isTimerActive = true;
-      plannedMinutes = (overrideMinutes && overrideMinutes > 0) ? overrideMinutes : (task.estimated_minutes || 50);
+      plannedMinutes = (overrideMinutes && overrideMinutes > 0)
+        ? overrideMinutes
+        : (task.session_minutes || task.estimated_minutes || 50);
       totalSeconds = plannedMinutes * 60;
       remainingSeconds = totalSeconds;
       isRunning = autoStart;
@@ -467,7 +481,11 @@
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
                   <span>${task.pages}</span>
                   <span>•</span>
-                  <span>${task.estimated_minutes} min</span>
+                  ${task.session_start_time && task.session_end_time ? `
+                    <span>${formatClock(task.session_start_time)} – ${formatClock(task.session_end_time)} (${task.session_minutes} min)</span>
+                  ` : `
+                    <span>${task.estimated_minutes} min · not yet scheduled</span>
+                  `}
                 </div>
               </div>
 

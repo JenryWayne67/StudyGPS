@@ -8,14 +8,10 @@
 // first write rather than requiring it to already exist.
 
 const express = require('express');
-const path = require('path');
-const Database = require('better-sqlite3');
 const { requireAuth } = require('../middleware/requireAuth');
+const { db } = require('../lib/db');
 
 const router = express.Router();
-
-const dbPath = path.join(__dirname, '../../database/studygps.db');
-const db = new Database(dbPath);
 
 router.use(requireAuth);
 
@@ -46,9 +42,9 @@ function shapeRow(row) {
 // Returns the full set of study-time preferences (used by schedule.html's
 // hours editor) plus dark_mode (used by theme.js) - defaults filled in for
 // any user who hasn't saved preferences yet.
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     try {
-        const row = db.prepare(`
+        const row = await db.prepare(`
             SELECT study_days, preferred_start, preferred_end, session_length, break_length, max_daily_minutes, dark_mode
             FROM user_preferences WHERE user_id = ?
         `).get(req.user.id);
@@ -66,11 +62,11 @@ router.get('/', (req, res) => {
 // merges it into the user's existing row (creating one on first write).
 // study_days may be sent as an array (["Monday", "Tuesday"]) or a
 // pre-joined CSV string - schedule.js's scheduler input reads it as CSV.
-router.put('/', (req, res) => {
+router.put('/', async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const existing = db.prepare(`
+        const existing = await db.prepare(`
             SELECT study_days, preferred_start, preferred_end, session_length, break_length, max_daily_minutes, dark_mode
             FROM user_preferences WHERE user_id = ?
         `).get(userId);
@@ -89,7 +85,7 @@ router.put('/', (req, res) => {
         };
 
         if (existing) {
-            db.prepare(`
+            await db.prepare(`
                 UPDATE user_preferences
                 SET study_days = ?, preferred_start = ?, preferred_end = ?,
                     session_length = ?, break_length = ?, max_daily_minutes = ?, dark_mode = ?
@@ -100,7 +96,7 @@ router.put('/', (req, res) => {
                 userId
             );
         } else {
-            db.prepare(`
+            await db.prepare(`
                 INSERT INTO user_preferences
                     (user_id, study_days, preferred_start, preferred_end, session_length, break_length, max_daily_minutes, dark_mode)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)

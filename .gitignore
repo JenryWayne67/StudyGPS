@@ -4,3 +4,23 @@
 # OS / editor cruft
 .DS_Store
 Thumbs.db
+
+# Dependencies - reinstalled by npm on every machine/deploy
+node_modules/
+
+# Real user data - your actual database (real names, emails, uploaded PDF
+# content) and the uploaded PDFs themselves. This must never end up in a
+# git repo, especially a public one on GitHub. schema.sql (the empty
+# table definitions, no real data) is fine to keep tracked.
+database/*.db
+database/*.db-wal
+database/*.db-shm
+uploads/*
+!uploads/.gitkeep
+
+# Compiled C++ engine binaries - these are platform-specific (Windows
+# .exe locally, Linux ELF on a Linux host like Render) and get rebuilt
+# from the tracked .cpp source on every deploy (see package.json's
+# "build" script), so committing a prebuilt binary would just be wrong
+# for whichever platform doesn't match.
+cpp_engine/*.exe

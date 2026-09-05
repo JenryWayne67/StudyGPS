@@ -5,14 +5,17 @@
 // keeping it updated on every sign-in after that. Used by both the real
 // Google OAuth strategy and the dev-login fallback in server.js /
 // backend/routes/auth.js, so both paths store users the same way.
+//
+// All functions here are async now (see backend/lib/db.js) - every caller
+// needs to await them.
 
-function upsertGoogleUser(db, { googleId, name, email }) {
-    let user = db.prepare(`SELECT * FROM users WHERE google_id = ?`).get(googleId);
+async function upsertGoogleUser(db, { googleId, name, email }) {
+    let user = await db.prepare(`SELECT * FROM users WHERE google_id = ?`).get(googleId);
 
     // Fall back to matching by email in case this user already exists
     // (e.g. seeded manually) without a google_id attached yet.
     if (!user && email) {
-        user = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
+        user = await db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
     }
 
     if (user) {
@@ -20,12 +23,12 @@ function upsertGoogleUser(db, { googleId, name, email }) {
         // signing in with Google for the first time), but never overwrite
         // a name the person has already set - Google's displayName isn't
         // more authoritative than a name they typed into the interview.
-        db.prepare(`UPDATE users SET google_id = ? WHERE id = ?`)
+        await db.prepare(`UPDATE users SET google_id = ? WHERE id = ?`)
             .run(googleId, user.id);
         return db.prepare(`SELECT * FROM users WHERE id = ?`).get(user.id);
     }
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
         INSERT INTO users (google_id, name, email)
         VALUES (?, ?, ?)
     `).run(googleId, name, email);
@@ -43,8 +46,8 @@ function findUserById(db, id) {
 
 // Create a new email/password account. Callers must already have checked
 // findUserByEmail() for a collision - this always inserts.
-function createLocalUser(db, { name, email, passwordHash }) {
-    const info = db.prepare(`
+async function createLocalUser(db, { name, email, passwordHash }) {
+    const info = await db.prepare(`
         INSERT INTO users (name, email, password_hash)
         VALUES (?, ?, ?)
     `).run(name, email, passwordHash);
@@ -65,17 +68,17 @@ function toPublicUser(user) {
 // so its existence is the signal that they've been through the interview
 // at least once before. First-time sign-ups/sign-ins (no row yet) get sent
 // to the interview; everyone else skips straight to the dashboard.
-function hasCompletedOnboarding(db, userId) {
-    const row = db.prepare(`SELECT 1 FROM user_preferences WHERE user_id = ?`).get(userId);
+async function hasCompletedOnboarding(db, userId) {
+    const row = await db.prepare(`SELECT 1 FROM user_preferences WHERE user_id = ?`).get(userId);
     return !!row;
 }
 
 // Let a user set/change their display name (e.g. from the interview page,
 // where a Google sign-in's name can be edited or a dev/demo name replaced).
-function updateUserName(db, userId, name) {
+async function updateUserName(db, userId, name) {
     const trimmed = (name || '').trim();
     if (!trimmed) return findUserById(db, userId);
-    db.prepare(`UPDATE users SET name = ? WHERE id = ?`).run(trimmed, userId);
+    await db.prepare(`UPDATE users SET name = ? WHERE id = ?`).run(trimmed, userId);
     return findUserById(db, userId);
 }
 
