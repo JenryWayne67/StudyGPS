@@ -1,0 +1,9 @@
+{
+  "name": "studygps-cf-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker reverse proxy in front of the Render-hosted StudyGPS app",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
+}
