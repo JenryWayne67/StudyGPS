@@ -477,7 +477,7 @@
                   <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${task.title}</h3>
                   ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
                 </div>
-                <p class="text-xs text-slate-600 font-medium">${task.course_name}</p>
+                <p class="text-xs text-slate-600 font-medium">${task.course_name}${task.material_name ? ` <span class="text-slate-400 font-normal">· ${task.material_name}</span>` : ''}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
                   <span>${task.pages}</span>
                   <span>•</span>

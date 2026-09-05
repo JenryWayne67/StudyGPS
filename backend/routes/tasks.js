@@ -44,6 +44,7 @@ router.get('/', async (req, res) => {
                 s.material_id,
                 s.course_id,
                 c.name AS course_name,
+                m.filename AS material_name,
                 EXISTS(
                     SELECT 1 FROM schedules sch WHERE sch.task_id = t.id AND sch.date = ?
                 ) AS scheduled_today,
@@ -62,6 +63,7 @@ router.get('/', async (req, res) => {
             FROM tasks t
             JOIN sections s ON s.id = t.section_id
             JOIN courses c ON c.id = s.course_id
+            LEFT JOIN materials m ON m.id = s.material_id
             WHERE c.user_id = ?
             ORDER BY t.priority DESC
         `).all(today, today, today, today, req.user.id);
@@ -132,10 +134,12 @@ router.get('/:id', async (req, res) => {
                 s.material_id,
                 s.course_id,
                 c.name AS course_name,
+                m.filename AS material_name,
                 c.user_id AS owner_user_id
             FROM tasks t
             JOIN sections s ON s.id = t.section_id
             LEFT JOIN courses c ON c.id = s.course_id
+            LEFT JOIN materials m ON m.id = s.material_id
             WHERE t.id = ?
         `).get(taskId);
 
