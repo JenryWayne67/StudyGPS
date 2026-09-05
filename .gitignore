@@ -1,0 +1,6 @@
+# Real secrets - never commit this. See .env.example for the template.
+.env
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

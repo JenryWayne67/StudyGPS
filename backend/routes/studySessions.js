@@ -3,11 +3,25 @@ const express = require('express');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { execFile } = require('child_process');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const router = express.Router();
 
 const dbPath = path.join(__dirname, '../../database/studygps.db');
 const db = new Database(dbPath);
+
+router.use(requireAuth);
+
+// Does this task belong (via section -> course) to the logged-in user?
+function taskOwnedByUser(taskId, userId) {
+    return db.prepare(`
+        SELECT t.id, t.section_id
+        FROM tasks t
+        JOIN sections s ON s.id = t.section_id
+        JOIN courses c ON c.id = s.course_id
+        WHERE t.id = ? AND c.user_id = ?
+    `).get(taskId, userId);
+}
 
 // POST /api/study-sessions
 router.post('/', (req, res) => {
@@ -29,12 +43,8 @@ router.post('/', (req, res) => {
             });
         }
 
-        // Get task using the columns that actually exist
-        const task = db.prepare(`
-            SELECT id, section_id
-            FROM tasks
-            WHERE id = ?
-        `).get(task_id);
+        // Get task using the columns that actually exist, scoped to this user
+        const task = taskOwnedByUser(task_id, req.user.id);
 
         if (!task) {
             return res.status(404).json({
@@ -137,6 +147,16 @@ router.post('/', (req, res) => {
                     cppCompleted
                 );
 
+                // The C++ engine's completion verdict is what actually
+                // moves the task forward - reflect it on the task itself
+                // so tasks.html/dashboard.html show real status, not just
+                // a logged session.
+                db.prepare(`
+                    UPDATE tasks
+                    SET status = ?
+                    WHERE id = ? AND status != 'Completed'
+                `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
+
                 const newSession = db.prepare(`
                     SELECT *
                     FROM study_sessions
@@ -172,10 +192,14 @@ router.post('/', (req, res) => {
 router.get('/', (req, res) => {
     try {
         const sessions = db.prepare(`
-            SELECT *
-            FROM study_sessions
-            ORDER BY id DESC
-        `).all();
+            SELECT ss.*
+            FROM study_sessions ss
+            JOIN tasks t ON t.id = ss.task_id
+            JOIN sections s ON s.id = t.section_id
+            JOIN courses c ON c.id = s.course_id
+            WHERE c.user_id = ?
+            ORDER BY ss.id DESC
+        `).all(req.user.id);
 
         res.json({
             success: true,

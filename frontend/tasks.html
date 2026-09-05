@@ -6,6 +6,7 @@
   <title>StudyGPS — Tasks & Study Timer</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
@@ -62,6 +63,13 @@
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
           Progress
+        </a>
+        <a href="settings.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
         </a>
       </nav>
 
@@ -199,7 +207,6 @@
     </a>
   </nav>
 
-  <script src="app-store.js"></script>
   <script>
     // State management
     let activeTaskId = null;
@@ -210,37 +217,78 @@
     let isRunning = false;
     let isTimerActive = false;
 
+    // Real data, loaded from the backend once and re-rendered locally as
+    // filters change / the timer runs.
+    let allTasksCache = [];
+    let coursesCache = [];
+
     function getQueryParam(name) {
       const urlParams = new URLSearchParams(window.location.search);
       return urlParams.get(name);
     }
 
+    async function fetchJSON(url, options) {
+      const res = await fetch(url, { credentials: 'same-origin', ...options });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return null;
+      }
+      return res.json();
+    }
+
+    async function loadCourses() {
+      const data = await fetchJSON('/api/courses');
+      coursesCache = (data && data.courses) || [];
+    }
+
+    async function loadTasks() {
+      const data = await fetchJSON('/api/tasks');
+      allTasksCache = (data && data.tasks) || [];
+    }
+
     function populateCourseFilter() {
-      const courses = StudyGPS.getCourses();
       const courseSelect = document.getElementById('filterCourse');
       if (!courseSelect) return;
-      
+
       const current = courseSelect.value || 'All';
       courseSelect.innerHTML = `
         <option value="All">All Courses</option>
-        ${courses.map(c => `<option value="${c.id}" ${String(c.id) === String(current) ? 'selected' : ''}>${c.name}</option>`).join('')}
+        ${coursesCache.map(c => `<option value="${c.id}" ${String(c.id) === String(current) ? 'selected' : ''}>${c.name}</option>`).join('')}
       `;
     }
 
-    function startTaskTimer(taskId) {
+    // autoStart=true (the default) is what the "Start Studying" button
+    // uses - it opens the task's timer panel AND immediately starts
+    // counting down. autoStart=false only opens/selects the task (used
+    // when arriving here via a ?task_id= link from Dashboard/Schedule) -
+    // it shows the timer panel ready to go, but leaves it paused until the
+    // person explicitly presses Resume, instead of silently starting a
+    // real, logged study session on their behalf just for clicking a link.
+    // overrideMinutes: when arriving from a specific Schedule/Dashboard
+    // session block (via ?minutes=), use THAT block's own length instead
+    // of the task's full estimated_minutes. A task longer than one study
+    // session gets split into multiple session-length chunks by the C++
+    // scheduler (cpp_engine/scheduler.cpp), so the block someone actually
+    // clicked can be shorter than the task's total - without this the
+    // timer always counted down the full task length no matter which
+    // block was clicked, never matching the duration shown on Schedule.
+    function startTaskTimer(taskId, autoStart = true, overrideMinutes = null) {
       activeTaskId = Number(taskId);
-      const task = StudyGPS.getTaskById(activeTaskId);
+      const task = allTasksCache.find(t => Number(t.id) === activeTaskId);
       if (!task) return;
 
       isTimerActive = true;
-      plannedMinutes = task.estimated_minutes || 50;
+      plannedMinutes = (overrideMinutes && overrideMinutes > 0) ? overrideMinutes : (task.estimated_minutes || 50);
       totalSeconds = plannedMinutes * 60;
       remainingSeconds = totalSeconds;
-      isRunning = true;
+      isRunning = autoStart;
 
       renderTasks();
-      startInterval();
+      if (autoStart) startInterval();
       updateTimerDisplay();
+
+      const card = document.getElementById(`task-card-${activeTaskId}`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function closeActiveTimer() {
@@ -251,16 +299,36 @@
       renderTasks();
     }
 
+    // Projected wall-clock finish time if the remaining countdown ran
+    // straight through with no more pauses - "Ends at 6:47 PM", not just a
+    // bare countdown, so a person can see whether a session fits before
+    // their next class/commitment.
+    function formatEndClock(secondsFromNow) {
+      const end = new Date(Date.now() + secondsFromNow * 1000);
+      let h = end.getHours();
+      const m = end.getMinutes();
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+
     function updateTimerDisplay() {
       const displayEl = document.getElementById('inlineTimeDisplay');
       const progressEl = document.getElementById('inlineProgressBar');
       const stateLabelEl = document.getElementById('inlineStateLabel');
-      
+      const endTimeEl = document.getElementById('inlineEndTime');
+
       if (!displayEl) return;
 
       const m = Math.floor(remainingSeconds / 60);
       const s = remainingSeconds % 60;
       displayEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+      if (endTimeEl) {
+        endTimeEl.textContent = isRunning
+          ? `Ends at ${formatEndClock(remainingSeconds)}`
+          : `Will end ~${Math.ceil(remainingSeconds / 60)} min after you start`;
+      }
 
       if (progressEl) {
         const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
@@ -268,7 +336,7 @@
       }
 
       if (stateLabelEl) {
-        stateLabelEl.textContent = isRunning ? 'Focusing...' : 'Paused';
+        stateLabelEl.textContent = isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused');
       }
     }
 
@@ -328,15 +396,32 @@
       }
     }
 
-    function finishTimer() {
+    async function finishTimer() {
       clearInterval(timerInterval);
-      const actualMinutes = Math.max(1, Math.round((totalSeconds - remainingSeconds) / 60));
-      
-      // Record completed session in store
-      StudyGPS.recordStudySession(activeTaskId, plannedMinutes, actualMinutes, 1);
+      const actualSeconds = totalSeconds - remainingSeconds;
+      const finishedTaskId = activeTaskId;
 
-      // Close current timer and re-render
+      try {
+        // Recorded by the real C++ studyTracker engine, which is what
+        // actually decides actual_minutes/completed - not this script.
+        await fetchJSON('/api/study-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task_id: finishedTaskId,
+            planned_minutes: plannedMinutes,
+            actual_seconds: actualSeconds,
+            end_time: new Date().toISOString()
+          })
+        });
+      } catch (err) {
+        console.error('Could not save study session:', err);
+      }
+
+      // Close current timer, refresh real task status, and re-render.
       closeActiveTimer();
+      await loadTasks();
+      renderTasks();
     }
 
     function renderTasks() {
@@ -344,7 +429,7 @@
       const courseFilter = document.getElementById('filterCourse').value;
       const statusFilter = document.getElementById('filterStatus').value;
 
-      let allTasks = StudyGPS.getTasks();
+      let allTasks = allTasksCache;
 
       if (courseFilter !== 'All') {
         allTasks = allTasks.filter(t => String(t.course_id) === courseFilter);
@@ -360,8 +445,6 @@
       document.getElementById('upcomingCountBadge').textContent = `${upcomingTasks.length} tasks`;
 
       const createCard = (task) => {
-        const isHigh = task.priority >= 75;
-        const priorityDot = isHigh ? '🔴' : (task.priority >= 65 ? '🟡' : '🟢');
         const isDone = task.status === 'Completed';
         const isCurrentActive = isTimerActive && Number(task.id) === Number(activeTaskId);
 
@@ -371,15 +454,13 @@
         const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
 
         return `
-          <div class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (isDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
+          <div id="task-card-${task.id}" class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (isDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
             
             <!-- TOP BAR: TASK METADATA & ACTIONS -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="space-y-1">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span>${priorityDot}</span>
                   <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${task.title}</h3>
-                  <span class="text-[10px] font-bold ${isHigh ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'} px-2 py-0.5 rounded">Priority: ${task.priority}</span>
                   ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
                 </div>
                 <p class="text-xs text-slate-600 font-medium">${task.course_name}</p>
@@ -387,8 +468,6 @@
                   <span>${task.pages}</span>
                   <span>•</span>
                   <span>${task.estimated_minutes} min</span>
-                  <span>•</span>
-                  <span>Deadline: ${task.deadline}</span>
                 </div>
               </div>
 
@@ -423,9 +502,10 @@
                     <div>
                       <div class="flex items-center gap-2">
                         <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">ACTIVE STUDY TIMER</span>
-                        <span class="text-[11px] font-semibold text-slate-400" id="inlineStateLabel">${isRunning ? 'Focusing...' : 'Paused'}</span>
+                        <span class="text-[11px] font-semibold text-slate-400" id="inlineStateLabel">${isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused')}</span>
                       </div>
                       <span id="inlineTimeDisplay" class="font-mono text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">${timeFormatted}</span>
+                      <span id="inlineEndTime" class="text-[11px] font-semibold text-slate-400 block">${isRunning ? `Ends at ${formatEndClock(remainingSeconds)}` : `Will end ~${Math.ceil(remainingSeconds / 60)} min after you start`}</span>
                     </div>
                   </div>
 
@@ -435,7 +515,7 @@
                       <span>⏸</span> Pause
                     </button>
                     <button id="inlineBtnResume" onclick="resumeTimer()" class="${isRunning ? 'hidden' : ''} py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                      <span>▶</span> Resume
+                      <span>▶</span> ${remainingSeconds === totalSeconds ? 'Start' : 'Resume'}
                     </button>
                     <button onclick="finishTimer()" class="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
                       <span>✓</span> Complete Task
@@ -481,21 +561,28 @@
       }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       // Sync user profile
-      const user = StudyGPS.getUser();
+      const authData = await fetchJSON('/api/auth/me');
+      if (!authData) return; // fetchJSON already redirected to /login
+      const user = authData.user;
       if (user) {
-        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
-        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+        document.getElementById('userName').textContent = user.name || 'Student';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
       }
 
+      await Promise.all([loadCourses(), loadTasks()]);
       populateCourseFilter();
       renderTasks();
 
-      // Check if user came from a direct "Start" link on Dashboard or Schedule
+      // Came here from a task link on Dashboard or Schedule - open/select
+      // that task and scroll to it, but don't start a real study session
+      // just because they clicked a link. They still press "Start Studying"
+      // (or "Resume" on the now-visible timer panel) themselves.
       const paramTaskId = getQueryParam('task_id');
       if (paramTaskId) {
-        startTaskTimer(paramTaskId);
+        const paramMinutes = Number(getQueryParam('minutes'));
+        startTaskTimer(paramTaskId, false, Number.isFinite(paramMinutes) && paramMinutes > 0 ? paramMinutes : null);
       }
     });
   </script>

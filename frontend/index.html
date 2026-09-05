@@ -6,6 +6,7 @@
   <title>StudyGPS — Your Personal Study Navigator</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans text-slate-900">
 
@@ -33,36 +34,21 @@
         Continue with Google
       </a>
 
-      <!-- Quick Student Access for Instant Testing -->
-      <button onclick="handleQuickLogin(false)" class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition">
-        Enter as New Student &rarr; Interview
-      </button>
-
-      <button onclick="handleQuickLogin(true)" class="w-full py-2 px-4 text-xs font-medium text-slate-500 hover:text-slate-800 transition">
-        Returning Student &rarr; Dashboard
-      </button>
+      <!-- Real email/password sign-in lives on login.html - this used to
+           be two "Quick Access" buttons that called a mock StudyGPS.setUser()
+           (app-store.js) and jumped straight to interview.html/dashboard.html
+           without ever creating a real session, so those pages' own
+           GET /api/auth/me check would just bounce back to /login anyway.
+           This links to the real thing instead of faking it. -->
+      <a href="login.html" class="w-full flex items-center justify-center py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition">
+        Continue with Email
+      </a>
     </div>
 
     <div class="mt-8 pt-6 border-t border-slate-100">
-      <p class="text-xs text-slate-400 font-medium">Welcome back!</p>
+      <p class="text-xs text-slate-400 font-medium">New here? Either button above will get you set up.</p>
     </div>
   </div>
 
-  <script src="app-store.js"></script>
-  <script>
-    function handleQuickLogin(isReturning) {
-      StudyGPS.setUser({
-        name: 'Alex Johnson',
-        email: 'alex.johnson@university.edu',
-        major: 'Computer Science',
-        isLoggedIn: true
-      });
-      if (isReturning) {
-        window.location.href = 'dashboard.html';
-      } else {
-        window.location.href = 'interview.html';
-      }
-    }
-  </script>
 </body>
 </html>

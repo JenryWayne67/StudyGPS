@@ -6,6 +6,7 @@
   <title>StudyGPS — Study Preferences</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 sm:p-6 font-sans text-slate-900">
 
@@ -30,10 +31,17 @@
     <!-- PAGE 1: Study Days & Time Range Per Day (AM/PM Supported) -->
     <div id="page1" class="space-y-6">
       <div>
-        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Set Your Daily Study Schedule</h1>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">Welcome to StudyGPS</h1>
         <p class="text-xs text-slate-500 mt-1">
-          Customize your study times for each day of the week. You can set any start and end time in AM or PM.
+          Let's set your name and daily study schedule. You can set any start and end time in AM or PM.
         </p>
+      </div>
+
+      <!-- Name -->
+      <div class="space-y-2">
+        <label for="nameInput" class="block text-xs font-bold uppercase tracking-wider text-slate-500">Your Name</label>
+        <input type="text" id="nameInput" placeholder="e.g. Alex Morgan" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <p id="nameError" class="text-[11px] font-semibold text-rose-600 hidden">Please enter your name.</p>
       </div>
 
       <!-- Quick Presets -->
@@ -147,14 +155,105 @@
 
   </div>
 
-  <script src="app-store.js"></script>
   <script>
     const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const MINUTES_LIST = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
     let currentPrefs = {};
 
-    document.addEventListener('DOMContentLoaded', () => {
-      currentPrefs = StudyGPS.getPreferences();
+    // Small self-contained time-math helpers (previously lived in
+    // app-store.js's mock StudyGPS object) - only ever called here with
+    // plain 24h "HH:MM" strings, so this is intentionally simpler than the
+    // old AM/PM-string-parsing version.
+    const TimeUtil = {
+      timeToMinutes(time24) {
+        if (!time24) return 18 * 60;
+        const [h, m] = time24.split(':').map((n) => parseInt(n, 10) || 0);
+        return h * 60 + m;
+      },
+      splitTime24to12(time24) {
+        if (!time24) return { hour: 6, minute: 0, ampm: 'PM' };
+        const mins = this.timeToMinutes(time24);
+        const h24 = Math.floor(mins / 60) % 24;
+        const m = mins % 60;
+        const ampm = h24 >= 12 ? 'PM' : 'AM';
+        const h12 = h24 % 12 || 12;
+        return { hour: h12, minute: m, ampm };
+      },
+      join12toTime24(hour12, minute, ampm) {
+        let h = parseInt(hour12, 10) || 12;
+        const m = parseInt(minute, 10) || 0;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      },
+      calcDurationText(startStr, endStr) {
+        const startMins = this.timeToMinutes(startStr);
+        let endMins = this.timeToMinutes(endStr);
+        if (endMins < startMins) endMins += 24 * 60;
+        const diff = endMins - startMins;
+        const hrs = Math.floor(diff / 60);
+        const mins = diff % 60;
+        if (diff <= 0) return '0 mins';
+        if (mins === 0) return `${hrs} hr${hrs === 1 ? '' : 's'}`;
+        if (hrs === 0) return `${mins} mins`;
+        return `${hrs}h ${mins}m`;
+      }
+    };
+    // Kept as `StudyGPS` below so the rest of this file's original code
+    // (written against that name) doesn't need to change line-by-line.
+    const StudyGPS = TimeUtil;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Pre-fill the name field with whatever we already have (Google
+      // profile name, or a name typed at signup) so the person can just
+      // confirm it instead of retyping.
+      try {
+        const meRes = await fetch('/api/auth/me');
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (meData.user && meData.user.name) {
+            document.getElementById('nameInput').value = meData.user.name;
+          }
+        } else if (meRes.status === 401) {
+          // Not logged in - nothing we can save here, send them to log in.
+          window.location.href = 'login.html';
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to load current user:', err);
+      }
+
+      // Pre-fill preferences if this user somehow already has a row (e.g.
+      // they came back via "Skip to Dashboard" earlier, or are revisiting
+      // this page to change their schedule). The backend only stores one
+      // shared start/end time and a set of active days (no true per-day
+      // times), so build the day-by-day UI shape from that flat data:
+      // every active day gets the same start/end, inactive days are off.
+      try {
+        const prefRes = await fetch('/api/preferences');
+        if (prefRes.ok) {
+          const prefData = await prefRes.json();
+          const activeDays = String(prefData.study_days || '')
+            .split(',').map((d) => d.trim()).filter(Boolean);
+          const daySchedules = {};
+          DAYS.forEach((day) => {
+            daySchedules[day] = {
+              enabled: activeDays.includes(day),
+              start: prefData.preferred_start || '18:00',
+              end: prefData.preferred_end || '21:00'
+            };
+          });
+          currentPrefs = {
+            day_schedules: daySchedules,
+            session_length: prefData.session_length,
+            break_length: prefData.break_length,
+            max_daily_minutes: prefData.max_daily_minutes
+          };
+        }
+      } catch (err) {
+        console.error('Failed to load current preferences:', err);
+      }
+
       renderDaysList();
       initStep2Fields();
     });
@@ -397,7 +496,17 @@
       }
     }
 
-    function finishInterview() {
+    async function finishInterview() {
+      const name = document.getElementById('nameInput').value.trim();
+      const nameError = document.getElementById('nameError');
+      if (!name) {
+        nameError.classList.remove('hidden');
+        goToStep(1);
+        document.getElementById('nameInput').focus();
+        return;
+      }
+      nameError.classList.add('hidden');
+
       // Gather active study days and individual schedules
       const activeDays = [];
       const daySchedules = {};
@@ -430,19 +539,37 @@
       const breakLen = document.querySelector('input[name="break_length"]:checked')?.value || 10;
       const maxDaily = document.getElementById('maxDailyMins')?.value || 120;
 
-      // Save preferences to store
-      StudyGPS.savePreferences({
-        day_schedules: daySchedules,
-        study_days: activeDays,
-        preferred_start: daySchedules['Monday']?.start || '18:00',
-        preferred_end: daySchedules['Monday']?.end || '21:00',
-        session_length: Number(sessionLen),
-        break_length: Number(breakLen),
-        max_daily_minutes: Number(maxDaily)
-      });
+      const saveBtn = document.querySelector('#page2 button[onclick="finishInterview()"]');
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
-      // Navigate to Dashboard
-      window.location.href = 'dashboard.html';
+      try {
+        const nameRes = await fetch('/api/auth/me/name', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        if (!nameRes.ok) throw new Error((await nameRes.json()).error || 'Could not save your name.');
+
+        const prefRes = await fetch('/api/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            study_days: activeDays,
+            preferred_start: daySchedules['Monday']?.start || '18:00',
+            preferred_end: daySchedules['Monday']?.end || '21:00',
+            session_length: Number(sessionLen),
+            break_length: Number(breakLen),
+            max_daily_minutes: Number(maxDaily)
+          })
+        });
+        if (!prefRes.ok) throw new Error((await prefRes.json()).error || 'Could not save your preferences.');
+
+        window.location.href = 'dashboard.html';
+      } catch (err) {
+        console.error('Failed to save interview results:', err);
+        alert(err.message || 'Something went wrong saving your preferences. Please try again.');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<span>Save Preferences & Open Dashboard</span> &rarr;'; }
+      }
     }
   </script>
 </body>

@@ -364,6 +364,50 @@ body {
   }
 }
 
+/* Dark mode (user-toggled via frontend/javascript/theme.js, saved to the
+   account through /api/preferences). Component rules above all read these
+   custom properties, so redefining them here is enough to re-theme every
+   card, sidebar, and nav link built with them; theme.js additionally
+   injects overrides for the raw Tailwind utility classes pages use
+   directly, since those don't go through these variables. */
+:root[data-theme="dark"] {
+  --bg-app: #0f172a;
+  --bg-card: #1e293b;
+  --bg-sidebar: #1e293b;
+
+  --border-subtle: #334155;
+  --border-medium: #475569;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+
+  --color-primary-light: #1e3a5f;
+}
+
+:root[data-theme="dark"] .nav-link:hover {
+  background-color: #334155;
+}
+
+:root[data-theme="dark"] .btn-secondary {
+  background-color: var(--bg-card);
+}
+
+:root[data-theme="dark"] .btn-secondary:hover {
+  background-color: #334155;
+}
+
+:root[data-theme="dark"] .user-avatar {
+  background-color: #1e3a5f;
+  color: #93c5fd;
+}
+
+@media (max-width: 860px) {
+  :root[data-theme="dark"] .app-sidebar {
+    background-color: rgba(30, 41, 59, 0.95);
+  }
+}
+
 /* Mobile Bottom Navigation Bar */
 .mobile-nav-bar {
   display: none;
@@ -414,5 +458,9 @@ body {
 
   .mobile-nav-item.active svg {
     stroke: var(--color-primary);
+  }
+
+  :root[data-theme="dark"] .mobile-nav-bar {
+    background-color: rgba(30, 41, 59, 0.96);
   }
 }

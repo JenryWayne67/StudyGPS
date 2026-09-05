@@ -6,6 +6,7 @@
   <title>StudyGPS — Dashboard</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
@@ -62,6 +63,13 @@
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
           Progress
+        </a>
+        <a href="settings.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
         </a>
       </nav>
 
@@ -149,7 +157,6 @@
           <h2 class="text-base font-bold text-slate-900 tracking-tight">Next Recommended Task</h2>
 
           <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-md shadow-blue-500/10 space-y-4">
-            <span class="text-[11px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full inline-block">Priority 80</span>
             <div>
               <h3 class="text-base font-bold" id="recTaskTitle">Logical Operators</h3>
               <p class="text-xs text-blue-100 mt-1" id="recTaskMeta">Discrete Mathematics • 50 min</p>
@@ -221,46 +228,144 @@
     </a>
   </nav>
 
-  <script src="app-store.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    async function fetchJSON(url, options) {
+      const res = await fetch(url, { credentials: 'same-origin', ...options });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return null;
+      }
+      return res.json();
+    }
+
+    function formatClock(hhmm) {
+      const [h, m] = String(hhmm).split(':').map(Number);
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+
+    function formatDuration(totalMinutes) {
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      if (h === 0) return `${m}m`;
+      if (m === 0) return `${h}h`;
+      return `${h}h ${m}m`;
+    }
+
+    // Local calendar date -> "YYYY-MM-DD" (NOT toISOString(), which
+    // converts to UTC first and can silently shift "today" to the wrong
+    // day - same fix already applied in schedule.js/schedule.html).
+    function todayLocalDateStr(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    // A task longer than one session gets split into multiple session-
+    // length chunks by the C++ scheduler (cpp_engine/scheduler.cpp), so a
+    // schedule row's own start/end time can be shorter than the task's
+    // full estimated_minutes. Use the row's real length so the timer this
+    // links to counts down the same duration shown here, not the task's
+    // full length.
+    function sessionMinutes(startHHMM, endHHMM) {
+      const [sh, sm] = String(startHHMM).split(':').map(Number);
+      const [eh, em] = String(endHHMM).split(':').map(Number);
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      return diff > 0 ? diff : null;
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
       // Sync user profile
-      const user = StudyGPS.getUser();
+      const authData = await fetchJSON('/api/auth/me');
+      if (!authData) return; // fetchJSON already redirected to /login
+      if (authData.needsInterview) {
+        window.location.href = 'interview.html';
+        return;
+      }
+      const user = authData.user;
       if (user) {
-        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
-        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+        document.getElementById('userName').textContent = user.name || 'Student';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
       }
 
-      // Sync progress stats
-      const progress = StudyGPS.getProgress();
-      document.getElementById('statTasks').textContent = `${progress.tasksCompleted} / ${progress.totalTasks}`;
-      document.getElementById('statTime').textContent = progress.studiedDisplay;
-      document.getElementById('statRate').textContent = `${progress.completionRate}%`;
+      const now = new Date();
+      const hour = now.getHours();
+      const greeting = hour < 12 ? 'Good morning' : (hour < 18 ? 'Good afternoon' : 'Good evening');
+      document.querySelector('.page-title').textContent = `${greeting} 👋`;
+      document.getElementById('currentDateLabel').textContent =
+        now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
-      // Render today's study timeline from store schedule
-      const schedules = StudyGPS.getSchedule();
+      const [tasksData, sessionsData, scheduleData] = await Promise.all([
+        fetchJSON('/api/tasks'),
+        fetchJSON('/api/study-sessions'),
+        fetchJSON('/api/schedule')
+      ]);
+
+      const tasks = (tasksData && tasksData.tasks) || [];
+      const sessions = (sessionsData && sessionsData.sessions) || [];
+      const schedule = (scheduleData && scheduleData.schedule) || [];
+
+      // Stats: tasks completed / total, minutes studied this week, and
+      // route completion (same ratio as tasks-completed, since there's no
+      // separate "route" data source yet).
+      const totalTasks = tasks.length;
+      const tasksCompleted = tasks.filter(t => t.status === 'Completed').length;
+      const completionRate = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 0;
+
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const minutesThisWeek = sessions
+        .filter(s => s.end_time && new Date(s.end_time) >= weekAgo)
+        .reduce((sum, s) => sum + (s.actual_minutes || 0), 0);
+
+      document.getElementById('statTasks').textContent = `${tasksCompleted} / ${totalTasks}`;
+      document.getElementById('statTime').textContent = formatDuration(minutesThisWeek);
+      document.getElementById('statRate').textContent = `${completionRate}%`;
+
+      // Today's study timeline, from the real generated schedule.
+      const todayStr = todayLocalDateStr(now);
+      const todaysSessions = schedule.filter(s => s.date === todayStr);
       const todayContainer = document.getElementById('todayStudyContainer');
-      const taskBlocks = schedules.filter(s => s.type === 'task');
 
-      if (taskBlocks.length > 0) {
-        todayContainer.innerHTML = taskBlocks.map((item, idx) => `
+      if (todaysSessions.length > 0) {
+        todayContainer.innerHTML = todaysSessions.map((item, idx) => {
+          const mins = sessionMinutes(item.start_time, item.end_time);
+          const minutesParam = mins ? `&minutes=${mins}` : '';
+          return `
           <div class="${idx > 0 ? 'pt-4' : 'pt-2'} flex items-center justify-between gap-4">
             <div class="space-y-1">
-              <span class="text-xs font-bold text-blue-600">${item.time}</span>
+              <span class="text-xs font-bold text-blue-600">${formatClock(item.start_time)}</span>
               <h3 class="text-sm font-bold text-slate-900">${item.title}</h3>
-              <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'} • ${item.pages || 'Session'} (${item.duration_minutes} min)</p>
+              <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'} • Pages ${item.start_page}-${item.end_page}</p>
             </div>
-            <a href="tasks.html?task_id=${item.task_id || 15}" class="btn btn-primary btn-sm whitespace-nowrap">
+            <a href="tasks.html?task_id=${item.task_id}${minutesParam}" class="btn btn-primary btn-sm whitespace-nowrap">
               Start &rarr;
             </a>
           </div>
-        `).join('');
+        `;
+        }).join('');
 
-        // Update recommended task with first pending task
-        const firstTask = taskBlocks[0];
-        document.getElementById('recTaskTitle').textContent = firstTask.title;
-        document.getElementById('recTaskMeta').textContent = `${firstTask.course_name} • ${firstTask.duration_minutes} min`;
-        document.getElementById('recTaskBtn').href = `tasks.html?task_id=${firstTask.task_id || 15}`;
+        const firstItem = todaysSessions[0];
+        const firstMins = sessionMinutes(firstItem.start_time, firstItem.end_time);
+        document.getElementById('recTaskTitle').textContent = firstItem.title;
+        document.getElementById('recTaskMeta').textContent = `${firstItem.course_name || 'Study'} • ${formatClock(firstItem.start_time)}`;
+        document.getElementById('recTaskBtn').href = `tasks.html?task_id=${firstItem.task_id}${firstMins ? `&minutes=${firstMins}` : ''}`;
+      } else {
+        todayContainer.innerHTML = `
+          <div class="pt-2 pb-2 text-center space-y-3">
+            <p class="text-xs text-slate-400 font-medium">No sessions scheduled for today yet.</p>
+            <a href="schedule.html" class="btn btn-primary btn-sm inline-flex">Generate a Schedule &rarr;</a>
+          </div>
+        `;
+
+        // Fall back to the highest-priority pending task as the recommendation.
+        const nextTask = tasks.find(t => t.status !== 'Completed');
+        if (nextTask) {
+          document.getElementById('recTaskTitle').textContent = nextTask.title;
+          document.getElementById('recTaskMeta').textContent = `${nextTask.course_name} • ${nextTask.estimated_minutes} min`;
+          document.getElementById('recTaskBtn').href = `tasks.html?task_id=${nextTask.id}`;
+        }
       }
     });
   </script>

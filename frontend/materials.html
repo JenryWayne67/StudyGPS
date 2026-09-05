@@ -6,6 +6,7 @@
   <title>StudyGPS — Study Materials & PDF Ingestion</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
@@ -63,13 +64,20 @@
           </svg>
           Progress
         </a>
+        <a href="settings.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
+        </a>
       </nav>
 
       <div class="sidebar-user">
         <div class="user-badge">
-          <span class="user-avatar">AJ</span>
+          <span class="user-avatar" id="avatarLetter">···</span>
           <div class="user-details">
-            <span class="user-name">Alex Johnson</span>
+            <span class="user-name" id="userName">Loading…</span>
             <span class="user-role">Computer Science</span>
           </div>
         </div>
@@ -149,48 +157,23 @@
         <!-- Analysis Results Column (5 cols) -->
         <div class="lg:col-span-5">
           <div id="analysisPanel" class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-6">
-            <div class="flex items-center gap-2 text-emerald-600 font-bold text-xs mb-3">
-              <span>✓</span>
-              <span>Analysis Complete</span>
+            <div class="flex items-center gap-2 font-bold text-xs mb-3" id="analysisStatusBadge">
+              <span>—</span>
+              <span>No material analyzed yet</span>
             </div>
 
             <div class="flex items-center gap-2 pb-4 mb-4 border-b border-slate-100">
               <span class="text-xl">📄</span>
               <div>
-                <h3 class="text-sm font-bold text-slate-900" id="analyzedDocTitle">Discrete Mathematics.pdf</h3>
-                <span class="text-[11px] text-slate-400 font-medium">48 pages • 3 sections parsed</span>
+                <h3 class="text-sm font-bold text-slate-900" id="analyzedDocTitle">Nothing selected</h3>
+                <span class="text-[11px] text-slate-400 font-medium" id="analyzedDocMeta">Click "Analyze" on an uploaded PDF to see real results here</span>
               </div>
             </div>
 
             <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Detected Sections</h4>
-            
+
             <div class="space-y-2.5 mb-6" id="detectedSectionsContainer">
-              <!-- Section 1 -->
-              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <div class="flex items-center justify-between">
-                  <h5 class="text-xs font-bold text-slate-800">Propositions</h5>
-                  <span class="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded">Diff 1</span>
-                </div>
-                <p class="text-[11px] text-slate-500 font-medium">Pages 3–6 • 40 min</p>
-              </div>
-
-              <!-- Section 2 -->
-              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <div class="flex items-center justify-between">
-                  <h5 class="text-xs font-bold text-slate-800">Logical Operators</h5>
-                  <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Diff 2</span>
-                </div>
-                <p class="text-[11px] text-slate-500 font-medium">Pages 7–10 • 50 min</p>
-              </div>
-
-              <!-- Section 3 -->
-              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <div class="flex items-center justify-between">
-                  <h5 class="text-xs font-bold text-slate-800">Truth Tables</h5>
-                  <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Diff 2</span>
-                </div>
-                <p class="text-[11px] text-slate-500 font-medium">Pages 11–15 • 60 min</p>
-              </div>
+              <p class="text-xs text-slate-400 font-medium">No sections detected yet.</p>
             </div>
 
             <button type="button" onclick="generateTasks()" id="btnGenTasks" class="w-full btn btn-primary flex items-center justify-center gap-2">
@@ -492,10 +475,18 @@
       }
     }
 
-    function renderSections(mat, sections) {
+    function renderSections(mat, sections, pageCount) {
       document.getElementById('analyzedDocTitle').textContent = mat ? mat.filename : 'Untitled';
 
       const secContainer = document.getElementById('detectedSectionsContainer');
+      const metaEl = document.getElementById('analyzedDocMeta');
+      const badge = document.getElementById('analysisStatusBadge');
+      const sectionCount = sections ? sections.length : 0;
+      const pages = pageCount != null ? pageCount : (mat && mat.page_count);
+
+      metaEl.textContent = `${pages != null ? pages + ' pages' : 'page count unknown'} • ${sectionCount} section${sectionCount === 1 ? '' : 's'} parsed`;
+      badge.innerHTML = `<span class="text-emerald-600">✓</span><span class="text-emerald-600">Analysis Complete</span>`;
+      badge.className = 'flex items-center gap-2 font-bold text-xs mb-3';
 
       if (!sections || sections.length === 0) {
         secContainer.innerHTML = `<p class="text-xs text-slate-400 font-medium">No sections detected yet.</p>`;
@@ -534,12 +525,47 @@
           throw new Error(data.error || 'Failed to process material');
         }
 
-        renderSections(mat, data.sections);
+        renderSections(mat, data.sections, data.page_count);
         loadCourseMaterials(); // refresh page_count/status shown in the list
+
+        // Pages/sections were saved successfully, but the C++ task-generation
+        // step can still fail on its own (e.g. sectionTaskManager.exe missing
+        // or crashed) without the whole request failing - surface that so it
+        // isn't silently lost, and offer the one-click retry endpoint.
+        if (data.task_generation_error) {
+          const retry = confirm(
+            `Sections were saved, but generating tasks for them failed:\n\n${data.task_generation_error}\n\n` +
+            `Retry task generation now?`
+          );
+          if (retry) {
+            await retryTaskGeneration(materialId, btn, originalLabel);
+          }
+        }
 
       } catch (error) {
         console.error('Failed to analyze material:', error);
         alert('Could not analyze this PDF: ' + error.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+      }
+    }
+
+    // Re-runs just the C++ task-generation step for a material's already-
+    // saved sections (backend/routes/materials.js POST /:id/regenerate-tasks)
+    // - no PDF reparsing, so it's cheap to retry after a transient failure
+    // or after rebuilding sectionTaskManager.exe.
+    async function retryTaskGeneration(materialId, btn, originalLabel) {
+      if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
+      try {
+        const response = await fetch(`/api/materials/${materialId}/regenerate-tasks`, { method: 'POST' });
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to generate tasks');
+        }
+        alert(`Generated ${data.tasks.length} task(s). Check the Tasks & Timer page.`);
+      } catch (error) {
+        console.error('Failed to regenerate tasks:', error);
+        alert('Still could not generate tasks: ' + error.message);
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
       }
@@ -600,7 +626,27 @@
       }
     });
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Sync user profile (same pattern as dashboard.html/tasks.html) -
+      // this page previously never fetched the logged-in user at all, so
+      // the sidebar always showed the hardcoded placeholder "Alex Johnson"
+      // no matter who was actually signed in.
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        if (res.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+        const authData = await res.json();
+        const user = authData.user;
+        if (user) {
+          document.getElementById('userName').textContent = user.name || 'Student';
+          document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
+        }
+      } catch (error) {
+        console.error('Failed to load current user:', error);
+      }
+
       renderCourseOptions();
     });
   </script>

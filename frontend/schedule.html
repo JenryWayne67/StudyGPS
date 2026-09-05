@@ -6,6 +6,7 @@
   <title>StudyGPS — My Schedule</title>
   <link rel="stylesheet" href="common.css">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="javascript/theme.js"></script>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
 
@@ -63,6 +64,13 @@
           </svg>
           Progress
         </a>
+        <a href="settings.html" class="nav-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
+        </a>
       </nav>
 
       <div class="sidebar-user">
@@ -114,8 +122,10 @@
           </div>
         </div>
 
-        <!-- 5-DAY WEEKLY GRID: MON | TUE | WED | THU | FRI -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4" id="weeklyGridContainer">
+        <!-- 7-DAY ROLLING GRID: today + the next 6 days, every day of the
+             week (weekends included, so a catch-up session placed there is
+             never hidden). -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4" id="weeklyGridContainer">
           <!-- Dynamically populated day columns -->
         </div>
 
@@ -231,9 +241,41 @@
         </div>
       </div>
 
-      <!-- Days List Scrollable -->
-      <div class="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-grow" id="modalDaysContainer">
-        <!-- Javascript renders per-day rows with AM/PM pickers -->
+      <!-- Preferences: one shared start/end window (real schema is one
+           window + a set of active days, not per-day custom hours) -->
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-5 flex-grow" id="modalDaysContainer">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Start Time</label>
+            <input type="time" id="prefStartTime" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">End Time</label>
+            <input type="time" id="prefEndTime" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Study Days</label>
+          <div class="flex flex-wrap gap-2" id="prefDaysContainer">
+            <!-- Day toggle chips rendered by script -->
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Session (min)</label>
+            <input type="number" id="prefSessionLength" min="10" max="180" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Break (min)</label>
+            <input type="number" id="prefBreakLength" min="0" max="60" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Daily Cap (min)</label>
+            <input type="number" id="prefMaxDaily" min="10" max="600" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
       </div>
 
       <!-- Modal Footer -->
@@ -249,168 +291,162 @@
     </div>
   </div>
 
-  <script src="app-store.js"></script>
   <script>
+    // Real data, loaded from the backend. currentWeekOffset counts whole
+    // weeks (Monday-aligned) from this week; scheduleCache holds every
+    // stored schedule row for this user (schedule.js's GET /api/schedule
+    // returns all of it, not just one week - slicing per week happens
+    // here on the client).
     let currentWeekOffset = 0;
+    let scheduleCache = [];
+    let preferencesCache = null;
     const DAYS_ALL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const MINS_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-    let modalPrefs = {};
+
+    async function fetchJSON(url, options) {
+      const res = await fetch(url, { credentials: 'same-origin', ...options });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return null;
+      }
+      return res.json();
+    }
+
+    function formatClock(hhmm) {
+      const [h, m] = String(hhmm).split(':').map(Number);
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+
+    // A task with more estimated minutes than one session length gets
+    // split into multiple session-length chunks by the C++ scheduler
+    // (see cpp_engine/scheduler.cpp splitTask()) - e.g. a 90-minute task
+    // becomes a 50-minute block on Monday and a 40-minute block on
+    // Tuesday, both pointing at the same task_id. Without this, clicking
+    // either block always started a countdown for the task's FULL 90
+    // minutes on tasks.html, which never matched the block you actually
+    // clicked - this computes that block's own real length in minutes so
+    // it can be passed through the link instead.
+    function sessionMinutes(startHHMM, endHHMM) {
+      const [sh, sm] = String(startHHMM).split(':').map(Number);
+      const [eh, em] = String(endHHMM).split(':').map(Number);
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      return diff > 0 ? diff : null;
+    }
+
+    // First day of the 7-day window `offset` windows from today (offset 0 =
+    // today through the next 6 days). Deliberately NOT aligned to the
+    // calendar's Monday - the C++ scheduler itself thinks in terms of
+    // "day_index 0 = today" (see schedule.js), and a Monday-Friday-only
+    // grid was the actual bug here: any session landing on a Saturday or
+    // Sunday was invisible, and if "today" fell on a weekend the default
+    // view showed an already-past Mon-Fri window with nothing in it. A
+    // rolling window anchored on today is always relevant and always shows
+    // every scheduled session, whatever day of the week it falls on.
+    function windowStart(offset) {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      now.setDate(now.getDate() + offset * 7);
+      return now;
+    }
+
+    // Local calendar date -> "YYYY-MM-DD", WITHOUT going through UTC (the
+    // previous version used toISOString(), which shifts the date backward
+    // by a day for anyone in a timezone ahead of UTC once the clock passes
+    // local midnight into UTC's previous day - exactly the kind of gap
+    // that made real, correctly-scheduled sessions land under the wrong
+    // date). This must produce the same date string the backend stores in
+    // schedule.js's formatDate() for the two to ever match up.
+    function toDateStr(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    async function loadPreferences() {
+      const data = await fetchJSON('/api/preferences');
+      preferencesCache = data || {
+        study_days: 'Monday,Tuesday,Wednesday,Thursday,Friday',
+        preferred_start: '18:00', preferred_end: '21:00',
+        session_length: 50, break_length: 10, max_daily_minutes: 120
+      };
+    }
+
+    async function loadSchedule() {
+      const data = await fetchJSON('/api/schedule');
+      scheduleCache = (data && data.schedule) || [];
+    }
 
     function openHoursModal() {
-      modalPrefs = JSON.parse(JSON.stringify(StudyGPS.getPreferences()));
-      renderModalDays();
+      const studyDays = new Set((preferencesCache.study_days || '').split(',').map(d => d.trim()));
+      document.getElementById('prefStartTime').value = preferencesCache.preferred_start || '18:00';
+      document.getElementById('prefEndTime').value = preferencesCache.preferred_end || '21:00';
+      document.getElementById('prefSessionLength').value = preferencesCache.session_length || 50;
+      document.getElementById('prefBreakLength').value = preferencesCache.break_length ?? 10;
+      document.getElementById('prefMaxDaily').value = preferencesCache.max_daily_minutes || 120;
+
+      const daysContainer = document.getElementById('prefDaysContainer');
+      daysContainer.innerHTML = DAYS_ALL.map(day => {
+        const active = studyDays.has(day);
+        return `
+          <button type="button" data-day="${day}" onclick="toggleDayChip(this)"
+            class="px-3 py-1.5 rounded-xl text-xs font-bold border transition ${active ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-600'}">
+            ${day.slice(0, 3)}
+          </button>
+        `;
+      }).join('');
+
       document.getElementById('hoursModal').classList.remove('hidden');
+    }
+
+    function toggleDayChip(btn) {
+      const active = btn.classList.contains('bg-blue-600');
+      if (active) {
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border transition bg-white border-slate-200 text-slate-600';
+      } else {
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border transition bg-blue-600 border-blue-600 text-white';
+      }
     }
 
     function closeHoursModal() {
       document.getElementById('hoursModal').classList.add('hidden');
     }
 
-    function renderModalDays() {
-      const container = document.getElementById('modalDaysContainer');
-      container.innerHTML = '';
-
-      const daySchedules = modalPrefs.day_schedules || {};
-
-      DAYS_ALL.forEach(day => {
-        const schedule = daySchedules[day] || { enabled: true, start: '18:00', end: '21:00' };
-        const isEnabled = schedule.enabled !== false;
-        const startParts = StudyGPS.splitTime24to12(schedule.start || '18:00');
-        const endParts = StudyGPS.splitTime24to12(schedule.end || '21:00');
-        const durText = StudyGPS.calcDurationText(schedule.start || '18:00', schedule.end || '21:00');
-
-        const row = document.createElement('div');
-        row.id = `mRow_${day}`;
-        row.className = `p-3 rounded-2xl border transition ${isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50/70 border-slate-200/60 opacity-60'}`;
-        
-        row.innerHTML = `
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5 min-w-[120px]">
-              <input type="checkbox" id="mCheck_${day}" ${isEnabled ? 'checked' : ''} onchange="toggleModalDay('${day}', this.checked)" class="w-4 h-4 text-blue-600 rounded cursor-pointer">
-              <label for="mCheck_${day}" class="text-xs font-bold text-slate-800 cursor-pointer select-none">${day}</label>
-            </div>
-
-            <div id="mTimes_${day}" class="flex items-center gap-2 flex-wrap ${isEnabled ? '' : 'pointer-events-none opacity-40'}">
-              <!-- Start Time -->
-              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
-                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">Start</span>
-                <select id="mStartH_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
-                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === startParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
-                </select>
-                <span class="text-slate-400 font-bold text-xs">:</span>
-                <select id="mStartM_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
-                  ${MINS_OPTIONS.map(m => `<option value="${m}" ${m === startParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
-                </select>
-                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
-                  <button type="button" id="mStartAM_${day}" onclick="setModalAmPm('${day}', 'start', 'AM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${startParts.ampm === 'AM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">AM</button>
-                  <button type="button" id="mStartPM_${day}" onclick="setModalAmPm('${day}', 'start', 'PM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${startParts.ampm === 'PM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">PM</button>
-                </div>
-              </div>
-
-              <span class="text-slate-400 text-xs font-bold">→</span>
-
-              <!-- End Time -->
-              <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
-                <span class="text-[9px] uppercase font-bold text-slate-400 px-1">End</span>
-                <select id="mEndH_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
-                  ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${h === endParts.hour ? 'selected' : ''}>${h}</option>`).join('')}
-                </select>
-                <span class="text-slate-400 font-bold text-xs">:</span>
-                <select id="mEndM_${day}" onchange="updateModalTime('${day}')" class="bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-lg px-1.5 py-0.5">
-                  ${MINS_OPTIONS.map(m => `<option value="${m}" ${m === endParts.minute ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('')}
-                </select>
-                <div class="flex items-center bg-slate-200/80 p-0.5 rounded-lg ml-0.5">
-                  <button type="button" id="mEndAM_${day}" onclick="setModalAmPm('${day}', 'end', 'AM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${endParts.ampm === 'AM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">AM</button>
-                  <button type="button" id="mEndPM_${day}" onclick="setModalAmPm('${day}', 'end', 'PM')" class="px-1.5 py-0.5 text-[9px] font-bold rounded ${endParts.ampm === 'PM' ? 'bg-blue-600 text-white' : 'text-slate-600'}">PM</button>
-                </div>
-              </div>
-
-              <span id="mDur_${day}" class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-lg ml-auto sm:ml-0">
-                ${durText}
-              </span>
-            </div>
-          </div>
-        `;
-        container.appendChild(row);
-      });
+    function applyModalPreset(type) {
+      const presets = {
+        evening: ['18:00', '21:00'],
+        morning: ['08:00', '11:30'],
+        afternoon: ['13:00', '16:30'],
+        night: ['20:30', '23:30']
+      };
+      const [start, end] = presets[type] || presets.evening;
+      document.getElementById('prefStartTime').value = start;
+      document.getElementById('prefEndTime').value = end;
     }
 
-    function setModalAmPm(day, type, ampm) {
-      const amBtn = document.getElementById(`m${type === 'start' ? 'Start' : 'End'}AM_${day}`);
-      const pmBtn = document.getElementById(`m${type === 'start' ? 'Start' : 'End'}PM_${day}`);
-      if (ampm === 'AM') {
-        amBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-600 text-white';
-        pmBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded text-slate-600';
-      } else {
-        pmBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-600 text-white';
-        amBtn.className = 'px-1.5 py-0.5 text-[9px] font-bold rounded text-slate-600';
-      }
-      updateModalTime(day);
-    }
+    async function saveHoursModal() {
+      const activeDays = Array.from(document.querySelectorAll('#prefDaysContainer button.bg-blue-600'))
+        .map(btn => btn.dataset.day);
 
-    function updateModalTime(day) {
-      const startH = document.getElementById(`mStartH_${day}`)?.value || 6;
-      const startM = document.getElementById(`mStartM_${day}`)?.value || 0;
-      const startAmPm = document.getElementById(`mStartAM_${day}`)?.classList.contains('bg-blue-600') ? 'AM' : 'PM';
-
-      const endH = document.getElementById(`mEndH_${day}`)?.value || 9;
-      const endM = document.getElementById(`mEndM_${day}`)?.value || 0;
-      const endAmPm = document.getElementById(`mEndAM_${day}`)?.classList.contains('bg-blue-600') ? 'AM' : 'PM';
-
-      const start24 = StudyGPS.join12toTime24(startH, startM, startAmPm);
-      const end24 = StudyGPS.join12toTime24(endH, endM, endAmPm);
-
-      if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
-      const isEnabled = document.getElementById(`mCheck_${day}`)?.checked ?? true;
-      modalPrefs.day_schedules[day] = {
-        enabled: isEnabled,
-        start: start24,
-        end: end24
+      const body = {
+        study_days: activeDays,
+        preferred_start: document.getElementById('prefStartTime').value || '18:00',
+        preferred_end: document.getElementById('prefEndTime').value || '21:00',
+        session_length: Number(document.getElementById('prefSessionLength').value) || 50,
+        break_length: Number(document.getElementById('prefBreakLength').value) || 10,
+        max_daily_minutes: Number(document.getElementById('prefMaxDaily').value) || 120
       };
 
-      const badge = document.getElementById(`mDur_${day}`);
-      if (badge) {
-        badge.textContent = StudyGPS.calcDurationText(start24, end24);
-      }
-    }
-
-    function toggleModalDay(day, isEnabled) {
-      if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
-      if (!modalPrefs.day_schedules[day]) {
-        modalPrefs.day_schedules[day] = { enabled: isEnabled, start: '18:00', end: '21:00' };
-      } else {
-        modalPrefs.day_schedules[day].enabled = isEnabled;
-      }
-      renderModalDays();
-    }
-
-    function applyModalPreset(type) {
-      DAYS_ALL.forEach(day => {
-        if (!modalPrefs.day_schedules) modalPrefs.day_schedules = {};
-        if (type === 'evening') {
-          modalPrefs.day_schedules[day] = { enabled: true, start: '18:00', end: '21:00' };
-        } else if (type === 'morning') {
-          modalPrefs.day_schedules[day] = { enabled: true, start: '08:00', end: '11:30' };
-        } else if (type === 'afternoon') {
-          modalPrefs.day_schedules[day] = { enabled: true, start: '13:00', end: '16:30' };
-        } else if (type === 'night') {
-          modalPrefs.day_schedules[day] = { enabled: true, start: '20:30', end: '23:30' };
-        }
-      });
-      renderModalDays();
-    }
-
-    function saveHoursModal() {
-      const activeDays = [];
-      DAYS_ALL.forEach(day => {
-        const isChecked = document.getElementById(`mCheck_${day}`)?.checked ?? true;
-        if (isChecked) activeDays.push(day);
+      await fetchJSON('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
 
-      modalPrefs.study_days = activeDays;
-      StudyGPS.savePreferences(modalPrefs);
+      preferencesCache = { ...preferencesCache, ...body };
       closeHoursModal();
-      renderWeeklyView();
+      await handleRegenerateWeek(); // hours changed - recompute with the C++ engine
     }
 
     function changeWeek(delta) {
@@ -423,35 +459,71 @@
       renderWeeklyView();
     }
 
-    function handleRegenerateWeek() {
+    async function handleRegenerateWeek() {
       const btn = document.getElementById('regenerateBtn');
       const originalText = btn.innerHTML;
       btn.innerHTML = `<span>⏳</span> Regenerating...`;
       btn.disabled = true;
 
-      setTimeout(() => {
-        StudyGPS.generateWeeklySchedule(currentWeekOffset);
+      try {
+        await fetchJSON('/api/schedule/generate', { method: 'POST' });
+        await loadSchedule();
         renderWeeklyView();
+      } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
-      }, 350);
+      }
     }
 
     function renderWeeklyView() {
-      const scheduleData = StudyGPS.getWeeklySchedule(currentWeekOffset);
-      if (!scheduleData) return;
+      const start = windowStart(currentWeekOffset);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = toDateStr(today);
 
-      document.getElementById('weekRangeLabel').textContent = scheduleData.weekLabel || 'Aug 24 – Aug 30';
+      const windowEnd = new Date(start);
+      windowEnd.setDate(start.getDate() + 6);
+      document.getElementById('weekRangeLabel').textContent =
+        `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${windowEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+      const studyDays = new Set((preferencesCache?.study_days || '').split(',').map(d => d.trim()));
+
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        // A full rolling week (today + i days) - every day of the week gets
+        // a column now, so a session the scheduler placed on a Saturday or
+        // Sunday (it does this when there isn't enough room on configured
+        // study days to fit everything before a deadline) is always visible
+        // instead of silently vanishing.
+        const date = new Date(start);
+        date.setDate(start.getDate() + i);
+        const dateStr = toDateStr(date);
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+
+        const sessionsForDay = scheduleCache
+          .filter(s => s.date === dateStr)
+          .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+
+        days.push({
+          dayName,
+          dateStr: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          isToday: dateStr === todayStr,
+          // Only call it a rest day if nothing's actually scheduled there -
+          // the C++ engine does sometimes place a catch-up session on an
+          // off day when it can't fit everything into study days alone, and
+          // that session should still show, not get hidden behind "Off/Rest".
+          isRestDay: !studyDays.has(dayName) && sessionsForDay.length === 0,
+          sessions: sessionsForDay
+        });
+      }
 
       const gridContainer = document.getElementById('weeklyGridContainer');
-      gridContainer.innerHTML = scheduleData.days.map(day => {
+      gridContainer.innerHTML = days.map(day => {
         const isToday = day.isToday;
         const isRest = day.isRestDay;
-        
+
         return `
           <div class="flex flex-col bg-slate-50/70 border ${isToday ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/20' : 'border-slate-200'} rounded-2xl p-3.5 space-y-3.5">
-            
-            <!-- Day Column Header -->
             <div class="text-center pb-2 border-b ${isToday ? 'border-blue-200' : 'border-slate-200/80'}">
               <div class="flex items-center justify-center gap-1.5">
                 <span class="font-extrabold text-sm tracking-wider ${isToday ? 'text-blue-700' : 'text-slate-800'}">${day.dayName}</span>
@@ -460,76 +532,52 @@
               <span class="text-[11px] font-semibold text-slate-400 block">${day.dateStr}</span>
               ${isRest ? `
                 <span class="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">Off / Rest</span>
-              ` : (day.startTimeFormatted ? `
-                <span class="text-[10px] font-bold text-blue-600 bg-blue-50/80 px-2 py-0.5 rounded-full inline-block mt-1">${day.startTimeFormatted}</span>
-              ` : '')}
+              ` : ''}
             </div>
 
-            <!-- Stacked Time Slots -->
             <div class="space-y-3 flex-grow flex flex-col justify-start">
               ${isRest ? `
                 <div class="flex-grow flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-200 bg-white/70 text-slate-400 text-center space-y-1.5 min-h-[140px]">
                   <span class="text-lg">🌿</span>
                   <span class="text-xs font-bold text-slate-600">Rest Day</span>
-                  <span class="text-[10px] text-slate-400 font-medium leading-tight">No sessions scheduled for ${day.fullDayName || day.dayName}</span>
+                  <span class="text-[10px] text-slate-400 font-medium leading-tight">No sessions scheduled for ${day.dayName}</span>
                 </div>
-              ` : day.slots.map(slot => {
-                if (slot.isFree || slot.title === '─────') {
-                  return `
-                    <div class="space-y-1 text-center py-2">
-                      <span class="font-mono text-xs font-bold text-slate-400 block">${slot.time}</span>
-                      <div class="p-3 rounded-xl border border-dashed border-slate-200 bg-white/60 text-slate-400 text-xs font-mono font-medium flex items-center justify-center min-h-[72px]">
-                        ─────
-                      </div>
+              ` : (day.sessions.length === 0 ? `
+                <div class="flex-grow flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-200 bg-white/60 text-slate-400 text-center space-y-1.5 min-h-[140px]">
+                  <span class="text-xs font-mono">─────</span>
+                  <span class="text-[10px] text-slate-400 font-medium">Nothing scheduled yet</span>
+                </div>
+              ` : day.sessions.map(s => `
+                <div class="space-y-1">
+                  <span class="font-mono text-xs font-bold text-slate-600 block pl-1">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
+                  <a href="tasks.html?task_id=${s.task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between">
+                    <div>
+                      <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${s.title}</h4>
+                      <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1">${s.course_name || ''}</p>
                     </div>
-                  `;
-                }
-
-                // Color accent styling
-                let borderClass = 'border-slate-200 hover:border-blue-300';
-                let tagClass = 'bg-blue-50 text-blue-700';
-                let timeColor = 'text-slate-600';
-
-                if (slot.color === 'emerald') {
-                  tagClass = 'bg-emerald-50 text-emerald-700';
-                } else if (slot.color === 'amber') {
-                  tagClass = 'bg-amber-50 text-amber-700';
-                } else if (slot.color === 'indigo' || slot.color === 'violet') {
-                  tagClass = 'bg-indigo-50 text-indigo-700';
-                }
-
-                return `
-                  <div class="space-y-1">
-                    <span class="font-mono text-xs font-bold ${timeColor} block pl-1">${slot.time}</span>
-                    <a href="tasks.html${slot.task_id ? '?task_id=' + slot.task_id : ''}" class="block p-3 rounded-xl bg-white border ${borderClass} shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between">
-                      <div>
-                        <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${slot.title}</h4>
-                        <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1">${slot.course_name}</p>
-                      </div>
-                      ${slot.pages ? `
-                        <div class="mt-2 flex items-center justify-between text-[9px] font-semibold text-slate-400 pt-1.5 border-t border-slate-100">
-                          <span>${slot.pages}</span>
-                          <span class="text-blue-600 group-hover:translate-x-0.5 transition">&rarr;</span>
-                        </div>
-                      ` : ''}
-                    </a>
-                  </div>
-                `;
-              }).join('')}
+                    <div class="mt-2 flex items-center justify-between text-[9px] font-semibold text-slate-400 pt-1.5 border-t border-slate-100">
+                      <span>${s.start_page != null ? `Pages ${s.start_page}-${s.end_page}` : ''}</span>
+                      <span class="text-blue-600 group-hover:translate-x-0.5 transition">&rarr;</span>
+                    </div>
+                  </a>
+                </div>
+              `).join(''))}
             </div>
-
           </div>
         `;
       }).join('');
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-      // Sync user profile
-      const user = StudyGPS.getUser();
+    document.addEventListener('DOMContentLoaded', async () => {
+      const authData = await fetchJSON('/api/auth/me');
+      if (!authData) return;
+      const user = authData.user;
       if (user) {
-        document.getElementById('userName').textContent = user.name || 'Alex Johnson';
-        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'A').toUpperCase();
+        document.getElementById('userName').textContent = user.name || 'Student';
+        document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
       }
+
+      await Promise.all([loadPreferences(), loadSchedule()]);
       renderWeeklyView();
     });
   </script>

@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <cstdlib>
 
 using namespace std;
 
@@ -365,74 +366,98 @@ public:
 
 
 // ---------------------------------------------------------
-// Main
+// Main - real stdin/stdout CLI
 // ---------------------------------------------------------
+//
+// Was previously a hardcoded demo dataset (the exact numbers that were
+// showing up baked into frontend/progress.html's markup - this program
+// was never actually wired to Node at all). Rewritten the same way
+// scheduler.cpp's main() was: read real, per-task records from stdin and
+// print a machine-parseable report, while every calculation above
+// (ProgressReport, CourseProgress, TaskProgress, formatPercentage) is
+// completely untouched.
+//
+// Input (stdin), one real task per line:
+//   TASK|<task name>|<course name>|<status>|<plannedMinutes>|<actualMinutes>
+// <status> is exactly one of the three strings the app's `tasks.status`
+// column already uses: "Not Started" | "In Progress" | "Completed".
+//
+// Output (stdout), key=value pairs so Node can regex-parse them:
+//   REPORT tasks_completed=<n> tasks_total=<n> completion_rate=<pct>
+//          study_minutes=<n> schedule_adherence=<pct>
+//   COURSE total=<n> completed=<n> percentage=<pct> name=<course name>
+//   (one COURSE line per distinct course, in first-seen order; <name> runs
+//   to end of line since course names can contain spaces)
+//
+// Example:
+//   printf "TASK|Sets Homework|Discrete Mathematics|Completed|60|50\n" | ./progressReport
+
+TaskStatus parseStatus(const string& s)
+{
+    if (s == "Completed") return TaskStatus::Completed;
+    if (s == "In Progress") return TaskStatus::InProgress;
+    return TaskStatus::NotStarted; // covers "Not Started" and anything unrecognized
+}
+
+vector<string> splitPipe(const string& line)
+{
+    vector<string> fields;
+    stringstream ss(line);
+    string field;
+    while (getline(ss, field, '|'))
+    {
+        fields.push_back(field);
+    }
+    return fields;
+}
 
 int main()
 {
-    // Sample data
-    vector<Task> tasks =
+    vector<Task> tasks;
+
+    string line;
+    while (getline(cin, line))
     {
-        {"Sets Homework", "Discrete Mathematics",
-         TaskStatus::Completed, 60, 50},
+        if (line.empty()) continue;
 
-        {"Functions Exercises", "Discrete Mathematics",
-         TaskStatus::Completed, 60, 55},
+        vector<string> fields = splitPipe(line);
+        if (fields.size() < 6 || fields[0] != "TASK") continue;
 
-        {"Matrices Practice", "Discrete Mathematics",
-         TaskStatus::Completed, 60, 45},
+        Task t;
+        t.name = fields[1];
+        t.course = fields[2];
+        t.status = parseStatus(fields[3]);
+        t.plannedMinutes = atoi(fields[4].c_str());
+        t.actualMinutes = atoi(fields[5].c_str());
 
-        {"Sequences Assignment", "Discrete Mathematics",
-         TaskStatus::Completed, 90, 70},
-
-        {"Cardinality Quiz", "Discrete Mathematics",
-         TaskStatus::Completed, 45, 40},
-
-        {"Set Operations", "Discrete Mathematics",
-         TaskStatus::Completed, 60, 50},
-
-        {"Graph Theory", "Discrete Mathematics",
-         TaskStatus::Completed, 90, 80},
-
-        {"Logic Exercises", "Discrete Mathematics",
-         TaskStatus::Completed, 60, 45},
-
-        {"C++ Classes", "C++",
-         TaskStatus::Completed, 60, 50},
-
-        {"File I/O", "C++",
-         TaskStatus::Completed, 60, 45},
-
-        {"Pointers", "C++",
-         TaskStatus::Completed, 90, 60},
-
-        {"Inheritance", "C++",
-         TaskStatus::Completed, 60, 50},
-
-        {"Polymorphism", "C++",
-         TaskStatus::InProgress, 60, 35},
-
-        {"Templates", "C++",
-         TaskStatus::InProgress, 60, 30},
-
-        {"IP Addressing", "Networking",
-         TaskStatus::Completed, 60, 40},
-
-        {"VLANs", "Networking",
-         TaskStatus::InProgress, 60, 35},
-
-        {"Routing", "Networking",
-         TaskStatus::NotStarted, 90, 0},
-
-        {"Subnetting", "Networking",
-         TaskStatus::NotStarted, 90, 0}
-    };
-
+        tasks.push_back(t);
+    }
 
     ProgressReport report(tasks);
 
-    report.generateReport();
+    TaskProgress taskProgress = report.calculateTaskProgress();
+    double completionRate = report.calculateCompletionRate();
+    int totalStudyMinutes = report.calculateTotalStudyTime();
+    double adherence = report.calculateScheduleAdherence();
+    vector<CourseProgress> courseProgress = report.calculateCourseProgress();
 
+    cout << "REPORT"
+         << " tasks_completed=" << taskProgress.completed
+         << " tasks_total=" << tasks.size()
+         << " completion_rate=" << completionRate
+         << " study_minutes=" << totalStudyMinutes
+         << " schedule_adherence=" << adherence
+         << "\n";
+
+    for (const CourseProgress& cp : courseProgress)
+    {
+        cout << "COURSE"
+             << " total=" << cp.totalTasks
+             << " completed=" << cp.completedTasks
+             << " percentage=" << cp.percentage
+             << " name=" << cp.course
+             << "\n";
+    }
 
     return 0;
 }

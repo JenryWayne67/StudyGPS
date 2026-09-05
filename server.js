@@ -1,3 +1,5 @@
+require('./backend/lib/env'); // loads .env into process.env before anything below reads it
+
 const express = require('express');
 const cors = require('cors');
 
@@ -18,6 +20,10 @@ const studySessionRoutes = require('./backend/routes/studySessions');
 const courseRoutes = require('./backend/routes/courses');
 const materialRoutes = require('./backend/routes/materials');
 const taskRoutes = require('./backend/routes/tasks');
+const preferencesRoutes = require('./backend/routes/preferences');
+const scheduleRoutes = require('./backend/routes/schedule');
+const progressRoutes = require('./backend/routes/progress');
+const accountRoutes = require('./backend/routes/account');
 const { upsertGoogleUser } = require('./backend/lib/users');
 console.log('MATERIAL ROUTES TYPE:', typeof materialRoutes);
 console.log('MATERIAL ROUTES:', materialRoutes);
@@ -34,9 +40,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Session configuration
+if (!process.env.SESSION_SECRET) {
+  console.warn(
+    '⚠️  SESSION_SECRET is not set (add it to .env) - falling back to an ' +
+    'insecure default. Set a real, random SESSION_SECRET before deploying.'
+  );
+}
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'studygps_secure_dev_secret_key',
+    secret: process.env.SESSION_SECRET || 'studygps_insecure_default_secret_change_me',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -66,9 +79,10 @@ passport.deserializeUser((id, done) => {
   }
 });
 
-// Google OAuth credentials configuration
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '817397034800-uruk0oe4n0f33au5nmm4uvlunutu6mge.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
+// Google OAuth credentials configuration - real values only ever come from
+// .env now (see .env.example). No secret literals live in source anymore.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
 if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
   passport.use(
@@ -113,6 +127,18 @@ app.use('/api/materials', materialRoutes);
 // Mount Task routes
 app.use('/api/tasks', taskRoutes);
 
+// Mount Preferences routes (dark mode, etc.)
+app.use('/api/preferences', preferencesRoutes);
+
+// Mount Schedule routes (real generated study schedule)
+app.use('/api/schedule', scheduleRoutes);
+
+// Mount Progress routes (real weekly progress report)
+app.use('/api/progress', progressRoutes);
+
+// Mount Account routes (clear study data, etc.)
+app.use('/api/account', accountRoutes);
+
 // Serve static frontend assets
 app.use(express.static(frontendPath));
 
@@ -134,8 +160,12 @@ app.get('/materials', (req, res) => {
   res.sendFile(path.join(frontendPath, 'materials.html'));
 });
 
+// GET /signup used to send interview.html (leftover from before login.html
+// grew a real Sign Up tab) - the actual signup form lives on login.html
+// (POST /api/auth/signup), so this alias now matches /login instead of
+// pointing at a page with no signup form on it.
 app.get('/signup', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'interview.html'));
+  res.sendFile(path.join(frontendPath, 'login.html'));
 });
 
 app.get('/dashboard', (req, res) => {
@@ -146,32 +176,20 @@ app.get('/courses', (req, res) => {
   res.sendFile(path.join(frontendPath, 'materials.html'));
 });
 
-app.get('/route', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'route.html'));
-});
-
 app.get('/tasks', (req, res) => {
   res.sendFile(path.join(frontendPath, 'tasks.html'));
-});
-
-app.get('/quiz', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'quiz.html'));
 });
 
 app.get('/progress', (req, res) => {
   res.sendFile(path.join(frontendPath, 'progress.html'));
 });
 
-app.get('/reports', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'reports.html'));
-});
-
 app.get('/schedule', (req, res) => {
   res.sendFile(path.join(frontendPath, 'schedule.html'));
 });
 
-app.get('/timer', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'timer.html'));
+app.get('/settings', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'settings.html'));
 });
 
 // Fallback for direct browser refresh or navigation

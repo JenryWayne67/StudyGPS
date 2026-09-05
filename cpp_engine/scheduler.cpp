@@ -73,21 +73,6 @@ struct ScheduledSession {
 };
 
 // ---------------------------------------------------------------------
-// Small formatting helper (not part of the algorithm, just for main())
-// ---------------------------------------------------------------------
-
-static std::string minutesToClock(int minutesSinceMidnight) {
-    int h24 = (minutesSinceMidnight / 60) % 24;
-    int m = minutesSinceMidnight % 60;
-    int h12 = h24 % 12;
-    if (h12 == 0) h12 = 12;
-    const char* ampm = (h24 < 12) ? "AM" : "PM";
-    std::ostringstream out;
-    out << h12 << ":" << (m < 10 ? "0" : "") << m << " " << ampm;
-    return out.str();
-}
-
-// ---------------------------------------------------------------------
 // Scheduler
 // ---------------------------------------------------------------------
 
@@ -270,57 +255,123 @@ private:
 };
 
 // ---------------------------------------------------------------------
-// Demo / sample data, matching the spec's example:
-//   Logical Operators: 50 min, priority 80, pages 7-10
-//   Truth Tables:       100 min (splits into two 50-min sessions), pages 11-18
-//   Monday 6-9 PM, Tuesday 7-10 PM available, 50-min sessions, 10-min breaks,
-//   120-minute daily cap.
+// CLI mode - same "engine as a small stdin/stdout filter" pattern as
+// sectionTaskManager.cpp / studyTracker.cpp: no DB/JSON code here,
+// Node.js (backend/routes/schedule.js) owns all I/O and just pipes
+// real task/time-slot rows in and reads scheduled sessions back out.
+// The algorithm above (Scheduler, taskScore, splitTask, ...) is
+// untouched - only this entry point changed.
+//
+// Input (stdin, one record per line, pipe-delimited, prefixed by
+// record type so config/tasks/slots can arrive in any order):
+//   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
+//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage
+//   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
+//
+// Output (stdout, one scheduled session per line, key=value - same
+// convention studyTracker.cpp/sectionTaskManager.cpp already use):
+//   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
+//   end_minutes=<n> start_page=<n> end_page=<n> part=<n> total_parts=<n>
+// Anything that couldn't be scheduled is reported as:
+//   warning=<task could not find room for N more minute(s)...>
+// (Node only regex-matches the fields it needs, so extra/warning lines
+// that don't match the "task_id=..." shape are simply ignored - same
+// tolerant-parsing convention as the other two engines.)
+//
+// Build:
+//   g++ -std=c++17 -O2 -o scheduler cpp_engine/scheduler.cpp
+//
+// Run (manual test):
+//   printf "CONFIG|50|10|120\nTASK|1|Logical Operators|50|80|2|3|7|10\nSLOT|Monday|0|1080|1260\n" | ./scheduler
 // ---------------------------------------------------------------------
 
-static void printSchedule(const std::vector<ScheduledSession>& schedule) {
-    std::string lastDay;
-    for (const auto& s : schedule) {
-        if (s.dayLabel != lastDay) {
-            std::cout << "\n" << s.dayLabel << "\n";
-            lastDay = s.dayLabel;
-        }
-        std::cout << minutesToClock(s.startMinutes) << " - " << minutesToClock(s.endMinutes)
-                   << "\n" << s.taskName;
-        if (s.totalParts > 1) {
-            std::cout << " (Part " << s.partNumber << "/" << s.totalParts << ")";
-        }
-        std::cout << "\n";
-        if (s.startPage >= 0) {
-            std::cout << "Pages " << s.startPage << "-" << s.endPage << "\n";
-        }
-        std::cout << "\n";
+static std::vector<std::string> splitPipeDelimited(const std::string& line) {
+    std::vector<std::string> fields;
+    std::stringstream ss(line);
+    std::string field;
+    while (std::getline(ss, field, '|')) {
+        fields.push_back(field);
     }
+    return fields;
+}
+
+static std::string trimLineEndings(const std::string& rawLine) {
+    std::string line = rawLine;
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+        line.pop_back();
+    }
+    return line;
 }
 
 int main() {
-    std::vector<Task> tasks = {
-        {"task_logical_operators", "Logical Operators", 50, /*priority=*/80,
-         /*deadlineDayIndex=*/2, /*difficulty=*/3, /*startPage=*/7, /*endPage=*/10},
-        {"task_truth_tables", "Truth Tables", 100, /*priority=*/70,
-         /*deadlineDayIndex=*/3, /*difficulty=*/5, /*startPage=*/11, /*endPage=*/18},
-    };
-
-    std::vector<TimeSlot> slots = {
-        {"Monday", 0, 18 * 60, 21 * 60},   // 6:00 PM - 9:00 PM
-        {"Tuesday", 1, 19 * 60, 22 * 60},  // 7:00 PM - 10:00 PM
-    };
-
     SchedulerConfig config{/*sessionLengthMinutes=*/50, /*breakLengthMinutes=*/10,
                             /*maxDailyMinutes=*/120};
+    std::vector<Task> tasks;
+    std::vector<TimeSlot> slots;
+
+    std::string rawLine;
+    while (std::getline(std::cin, rawLine)) {
+        std::string line = trimLineEndings(rawLine);
+        if (line.empty()) continue;
+
+        std::vector<std::string> fields = splitPipeDelimited(line);
+        if (fields.empty()) continue;
+
+        try {
+            if (fields[0] == "CONFIG" && fields.size() >= 4) {
+                config.sessionLengthMinutes = std::stoi(fields[1]);
+                config.breakLengthMinutes = std::stoi(fields[2]);
+                config.maxDailyMinutes = std::stoi(fields[3]);
+            } else if (fields[0] == "TASK" && fields.size() >= 9) {
+                Task task;
+                task.id = fields[1];
+                task.name = fields[2];
+                task.estimatedMinutes = std::stoi(fields[3]);
+                task.priority = std::stoi(fields[4]);
+                task.deadlineDayIndex = std::stoi(fields[5]);
+                task.difficulty = std::stoi(fields[6]);
+                task.startPage = std::stoi(fields[7]);
+                task.endPage = std::stoi(fields[8]);
+                tasks.push_back(task);
+            } else if (fields[0] == "SLOT" && fields.size() >= 5) {
+                TimeSlot slot;
+                slot.dayLabel = fields[1];
+                slot.dayIndex = std::stoi(fields[2]);
+                slot.startMinutes = std::stoi(fields[3]);
+                slot.endMinutes = std::stoi(fields[4]);
+                slots.push_back(slot);
+            }
+            // Unknown record types / malformed lines are skipped rather
+            // than aborting the whole batch, same tolerance as the other
+            // engines.
+        } catch (const std::exception&) {
+            continue;
+        }
+    }
 
     Scheduler scheduler(tasks, slots, config);
     std::vector<ScheduledSession> schedule = scheduler.generateSchedule();
 
-    printSchedule(schedule);
+    for (const auto& s : schedule) {
+        std::cout
+            << "task_id=" << s.taskId
+            << " day_index=" << s.dayIndex
+            << " day_label=" << s.dayLabel
+            << " start_minutes=" << s.startMinutes
+            << " end_minutes=" << s.endMinutes
+            << " start_page=" << s.startPage
+            << " end_page=" << s.endPage
+            << " part=" << s.partNumber
+            << " total_parts=" << s.totalParts
+            << "\n";
+    }
 
     for (const auto& warning : scheduler.unscheduledWarnings()) {
-        std::cout << "WARNING: " << warning << "\n";
+        std::cout << "warning=" << warning << "\n";
     }
+
+    std::cerr << "scheduler: scheduled " << schedule.size() << " session(s) from "
+               << tasks.size() << " task(s) into " << slots.size() << " slot(s)\n";
 
     return 0;
 }

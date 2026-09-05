@@ -1,0 +1,204 @@
+// frontend/javascript/theme.js
+//
+// Site-wide dark mode. Self-contained: injects its own dark-mode CSS
+// (covering both common.css's custom properties and the raw Tailwind
+// utility classes pages use directly, since Tailwind's CDN build has no
+// build step to add a `dark:` variant to), reads/writes the user's
+// preference against the real backend (source of truth), and injects a
+// floating toggle control - so any page picks up dark mode by adding one
+// script tag, no per-page markup changes required.
+//
+// Include this in <head>, ideally right after the Tailwind CDN <script>
+// tag, so the theme is applied before first paint (a cached choice in
+// localStorage is applied immediately; the DB is still consulted right
+// after and wins if it disagrees - e.g. a different device already
+// changed it).
+
+(function () {
+    const STORAGE_KEY = 'studygps_dark_mode';
+
+    function applyTheme(isDark) {
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    }
+
+    // 1. Paint the last-known choice immediately, before the DB round trip,
+    // so there's no flash of the wrong theme on reload.
+    let cached = null;
+    try {
+        cached = localStorage.getItem(STORAGE_KEY);
+    } catch (err) {
+        // Storage unavailable (private mode, blocked) - fall back to light
+        // until/unless the DB fetch below succeeds.
+    }
+    if (cached === '1') applyTheme(true);
+    else if (cached === '0') applyTheme(false);
+
+    // 2. Inject the dark-mode stylesheet once, synchronously, so it's
+    // ready the instant data-theme flips to "dark".
+    const style = document.createElement('style');
+    style.textContent = `
+        /* --- common.css custom properties (covers every page that links
+           common.css and uses var(--bg-app) etc.) --- */
+        :root[data-theme="dark"] {
+            --bg-app: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #1e293b;
+
+            --border-subtle: #334155;
+            --border-medium: #475569;
+
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+
+            --color-primary-light: #1e3a5f;
+        }
+
+        /* --- Raw Tailwind utility classes used directly in page markup.
+           Higher specificity ([data-theme="dark"] + class) beats a bare
+           Tailwind class regardless of stylesheet load order, so this
+           works whether Tailwind's CDN stylesheet loads before or after
+           this one. --- */
+        [data-theme="dark"] body { background-color: #0f172a; color: #f1f5f9; }
+
+        [data-theme="dark"] .bg-white { background-color: #1e293b !important; }
+        [data-theme="dark"] .bg-slate-50 { background-color: #0f172a !important; }
+        [data-theme="dark"] .bg-slate-100 { background-color: #1e293b !important; }
+        [data-theme="dark"] .bg-slate-200 { background-color: #334155 !important; }
+        [data-theme="dark"] .bg-slate-900 { background-color: #f1f5f9 !important; }
+
+        [data-theme="dark"] .text-slate-900 { color: #f1f5f9 !important; }
+        [data-theme="dark"] .text-slate-800 { color: #e2e8f0 !important; }
+        [data-theme="dark"] .text-slate-700 { color: #cbd5e1 !important; }
+        [data-theme="dark"] .text-slate-600 { color: #94a3b8 !important; }
+        [data-theme="dark"] .text-slate-500 { color: #94a3b8 !important; }
+        [data-theme="dark"] .text-slate-400 { color: #64748b !important; }
+
+        [data-theme="dark"] .border-slate-100 { border-color: #334155 !important; }
+        [data-theme="dark"] .border-slate-200 { border-color: #334155 !important; }
+        [data-theme="dark"] .border-slate-300 { border-color: #475569 !important; }
+
+        [data-theme="dark"] .bg-blue-50 { background-color: #1e3a5f !important; }
+        [data-theme="dark"] .bg-blue-100 { background-color: #1e3a5f !important; }
+        [data-theme="dark"] .border-blue-100 { border-color: #1e40af !important; }
+        [data-theme="dark"] .border-blue-200 { border-color: #1e40af !important; }
+        [data-theme="dark"] .border-blue-300 { border-color: #1d4ed8 !important; }
+        [data-theme="dark"] .border-blue-400 { border-color: #2563eb !important; }
+
+        [data-theme="dark"] .bg-emerald-50 { background-color: #064e3b !important; }
+        [data-theme="dark"] .border-emerald-200 { border-color: #047857 !important; }
+        [data-theme="dark"] .bg-amber-100 { background-color: #78350f !important; }
+
+        [data-theme="dark"] ::placeholder { color: #64748b !important; }
+        [data-theme="dark"] input,
+        [data-theme="dark"] select,
+        [data-theme="dark"] textarea { color-scheme: dark; }
+
+        /* Theme toggle control injected by this script */
+        .theme-toggle-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 48px;
+            height: 48px;
+            border-radius: 9999px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background-color: var(--bg-card, #ffffff);
+            color: var(--text-primary, #0f172a);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            transition: transform 0.15s ease;
+        }
+        .theme-toggle-btn:hover { transform: scale(1.06); }
+        .theme-toggle-btn:active { transform: scale(0.96); }
+        @media (max-width: 860px) {
+            .theme-toggle-btn { bottom: 80px; }
+        }
+    `;
+    document.head.appendChild(style);
+
+    function isDarkNow() {
+        return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
+
+    function persistLocally(isDark) {
+        try {
+            localStorage.setItem(STORAGE_KEY, isDark ? '1' : '0');
+        } catch (err) {
+            // ignore - best effort only
+        }
+    }
+
+    async function fetchServerPreference() {
+        try {
+            const res = await fetch('/api/preferences', { credentials: 'same-origin' });
+            if (!res.ok) return; // not logged in yet (e.g. on /login) - keep local/default
+            const data = await res.json();
+            const isDark = !!data.dark_mode;
+            applyTheme(isDark);
+            persistLocally(isDark);
+            updateToggleIcon();
+        } catch (err) {
+            // Offline / server not reachable - keep whatever's already applied.
+        }
+    }
+
+    async function toggleTheme() {
+        const next = !isDarkNow();
+        applyTheme(next);
+        persistLocally(next);
+        updateToggleIcon();
+
+        try {
+            await fetch('/api/preferences', {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dark_mode: next })
+            });
+        } catch (err) {
+            // Best effort - the local choice still applies this session even
+            // if it couldn't be saved to the account right now.
+        }
+    }
+
+    let toggleBtn = null;
+
+    function updateToggleIcon() {
+        if (!toggleBtn) return;
+        toggleBtn.textContent = isDarkNow() ? '☀️' : '🌙';
+        toggleBtn.setAttribute('aria-label', isDarkNow() ? 'Switch to light mode' : 'Switch to dark mode');
+        toggleBtn.title = toggleBtn.getAttribute('aria-label');
+    }
+
+    function injectToggleButton() {
+        if (document.querySelector('.theme-toggle-btn')) return; // already present
+        toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'theme-toggle-btn';
+        toggleBtn.addEventListener('click', toggleTheme);
+        document.body.appendChild(toggleBtn);
+        updateToggleIcon();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectToggleButton);
+    } else {
+        injectToggleButton();
+    }
+
+    // Sync with the account's saved preference once the DOM (and any auth
+    // cookie) is ready - this is the source of truth, so it can flip the
+    // locally-cached guess if they disagree (e.g. changed on another device).
+    fetchServerPreference();
+
+    // Exposed for any page that wants to react to theme changes (e.g. a
+    // chart library that needs re-rendering with new colors).
+    window.StudyGPSTheme = { toggle: toggleTheme, isDark: isDarkNow };
+})();

@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const Database = require('better-sqlite3');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const router = express.Router();
 console.log('COURSES ROUTE LOADED');
@@ -9,6 +10,8 @@ console.log('COURSES ROUTE LOADED');
 const dbPath = path.join(__dirname, '../../database/studygps.db');
 const db = new Database(dbPath);
 
+router.use(requireAuth);
+
 router.get('/test', (req, res) => {
     res.json({
         success: true,
@@ -16,10 +19,10 @@ router.get('/test', (req, res) => {
     });
 });
 // GET /api/courses
-// Return all courses for a user
+// Return all courses for the logged-in user
 router.get('/', (req, res) => {
     try {
-        const userId = Number(req.query.user_id) || 1;
+        const userId = req.user.id;
 
         const courses = db.prepare(`
             SELECT id, user_id, name
@@ -45,12 +48,11 @@ router.get('/', (req, res) => {
 
 
 // POST /api/courses
-// Create a new course
+// Create a new course, owned by the logged-in user
 router.post('/', (req, res) => {
     try {
-        const { user_id, name } = req.body;
-
-        const userId = Number(user_id) || 1;
+        const { name } = req.body;
+        const userId = req.user.id;
 
         if (!name || !name.trim()) {
             return res.status(400).json({

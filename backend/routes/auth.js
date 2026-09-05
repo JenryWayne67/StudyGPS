@@ -2,16 +2,19 @@ const express = require('express');
 const path = require('path');
 const passport = require('passport');
 const Database = require('better-sqlite3');
-const { upsertGoogleUser } = require('../lib/users');
+const { upsertGoogleUser, findUserByEmail, createLocalUser, toPublicUser, hasCompletedOnboarding, updateUserName } = require('../lib/users');
+const { hashPassword, verifyPassword } = require('../lib/passwords');
+const { rateLimit } = require('../lib/rateLimit');
 
 const router = express.Router();
 
 const dbPath = path.join(__dirname, '../../database/studygps.db');
 const db = new Database(dbPath);
 
-// Middleware to check if Google Strategy is configured
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '817397034800-uruk0oe4n0f33au5nmm4uvlunutu6mge.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
+// Real values only ever come from .env now (see .env.example) - no secret
+// literals live in source anymore.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
 const ensureGoogleConfigured = (req, res, next) => {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
@@ -34,8 +37,8 @@ const ensureGoogleConfigured = (req, res, next) => {
             <a href="/api/auth/dev-login" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition">
               Continue with Demo Student Account &rarr;
             </a>
-            <a href="/onboarding.html" class="text-xs text-slate-500 hover:underline">
-              Back to Onboarding
+            <a href="/index.html" class="text-xs text-slate-500 hover:underline">
+              Back to Login
             </a>
           </div>
         </div>
@@ -59,7 +62,7 @@ router.get('/dev-login', (req, res) => {
 
     req.login(dbUser, (err) => {
       if (err) return res.redirect('/index.html');
-      res.redirect('/dashboard.html');
+      res.redirect(hasCompletedOnboarding(db, dbUser.id) ? '/dashboard.html' : '/interview.html');
     });
   } catch (error) {
     console.error('Dev login error:', error);
@@ -67,8 +70,85 @@ router.get('/dev-login', (req, res) => {
   }
 });
 
+const authAttemptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  keyPrefix: 'auth'
+});
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Email/password signup - creates a real row in `users` alongside the
+// Google-login path (upsertGoogleUser). A user can also later "link"
+// Google to the same email via upsertGoogleUser's email-match fallback.
+router.post('/signup', authAttemptLimiter, (req, res) => {
+  try {
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password || '';
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are all required.' });
+    }
+    if (!EMAIL_PATTERN.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+
+    const existing = findUserByEmail(db, email);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with that email already exists.' });
+    }
+
+    const passwordHash = hashPassword(password);
+    const dbUser = createLocalUser(db, { name, email, passwordHash });
+
+    req.login(dbUser, (err) => {
+      if (err) return res.status(500).json({ error: 'Account created, but login failed. Please try logging in.' });
+      // A brand-new signup never has a preferences row yet, so this is
+      // always true - but compute it the same way as everywhere else
+      // rather than hardcoding, in case that ever changes.
+      res.status(201).json({ user: toPublicUser(dbUser), needsInterview: !hasCompletedOnboarding(db, dbUser.id) });
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Something went wrong creating your account.' });
+  }
+});
+
+// Email/password login
+router.post('/login', authAttemptLimiter, (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password || '';
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const dbUser = findUserByEmail(db, email);
+
+    // Same generic error whether the email doesn't exist or the password
+    // doesn't match, and whether the account has no password set (e.g. a
+    // Google-only account) - don't leak which case it was.
+    if (!dbUser || !verifyPassword(password, dbUser.password_hash)) {
+      return res.status(401).json({ error: 'Incorrect email or password.' });
+    }
+
+    req.login(dbUser, (err) => {
+      if (err) return res.status(500).json({ error: 'Login failed. Please try again.' });
+      res.json({ user: toPublicUser(dbUser), needsInterview: !hasCompletedOnboarding(db, dbUser.id) });
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Something went wrong logging in.' });
+  }
+});
+
 // Trigger Google Login
-router.get('/google', ensureGoogleConfigured, passport.authenticate('google', { 
+router.get('/google', ensureGoogleConfigured, passport.authenticate('google', {
   scope: ['profile', 'email'],
   prompt: 'select_account'
 }));
@@ -78,15 +158,36 @@ router.get('/google/callback',
   ensureGoogleConfigured,
   passport.authenticate('google', { failureRedirect: '/index.html' }),
   (req, res) => {
-    // Redirect to dashboard page after successful login
-    res.redirect('/dashboard.html');
+    // First-time sign-ins (no user_preferences row yet) go through the
+    // interview so we can capture their name/study preferences before the
+    // scheduler needs them; returning users skip straight to the dashboard.
+    res.redirect(hasCompletedOnboarding(db, req.user.id) ? '/dashboard.html' : '/interview.html');
   }
 );
+
+// Update the logged-in user's display name (used by the interview page,
+// which lets a person confirm/edit the name pulled from Google or typed
+// during signup before it's saved for good).
+router.put('/me/name', (req, res) => {
+  if (!(req.isAuthenticated && req.isAuthenticated())) {
+    return res.status(401).json({ error: 'Not logged in.' });
+  }
+  const name = (req.body.name || '').trim();
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required.' });
+  }
+  const updated = updateUserName(db, req.user.id, name);
+  res.json({ user: toPublicUser(updated) });
+});
 
 // Get Currently Logged-In User
 router.get('/me', (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) {
-    res.json({ loggedIn: true, user: req.user });
+    res.json({
+      loggedIn: true,
+      user: toPublicUser(req.user),
+      needsInterview: !hasCompletedOnboarding(db, req.user.id)
+    });
   } else {
     res.status(401).json({ loggedIn: false });
   }

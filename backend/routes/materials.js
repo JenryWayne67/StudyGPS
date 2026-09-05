@@ -5,11 +5,30 @@ const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const Database = require('better-sqlite3');
 const { execFileSync } = require('child_process');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const router = express.Router();
 
 const dbPath = path.join(__dirname, '../../database/studygps.db');
 const db = new Database(dbPath);
+
+router.use(requireAuth);
+
+// Shared ownership check: does this course belong to the logged-in user?
+function courseBelongsToUser(courseId, userId) {
+    return db.prepare(`SELECT id FROM courses WHERE id = ? AND user_id = ?`).get(courseId, userId);
+}
+
+// Shared ownership check: does this material's course belong to the
+// logged-in user? Returns the material row (with course_id) if so.
+function materialOwnedByUser(materialId, userId) {
+    return db.prepare(`
+        SELECT m.*
+        FROM materials m
+        JOIN courses c ON c.id = m.course_id
+        WHERE m.id = ? AND c.user_id = ?
+    `).get(materialId, userId);
+}
 
 // ==========================================
 // PDF UPLOAD CONFIGURATION
@@ -57,10 +76,15 @@ const upload = multer({
 router.get('/', (req, res) => {
     try {
         const courseId = Number(req.query.course_id);
+        const userId = req.user.id;
 
         let materials;
 
         if (courseId) {
+            if (!courseBelongsToUser(courseId, userId)) {
+                return res.status(404).json({ success: false, error: 'Course not found' });
+            }
+
             materials = db.prepare(`
                 SELECT
                     id,
@@ -78,17 +102,19 @@ router.get('/', (req, res) => {
         } else {
             materials = db.prepare(`
                 SELECT
-                    id,
-                    course_id,
-                    filename,
-                    file_path,
-                    uploaded_at,
-                    status,
-                    page_count,
-                    file_size
-                FROM materials
-                ORDER BY id DESC
-            `).all();
+                    m.id,
+                    m.course_id,
+                    m.filename,
+                    m.file_path,
+                    m.uploaded_at,
+                    m.status,
+                    m.page_count,
+                    m.file_size
+                FROM materials m
+                JOIN courses c ON c.id = m.course_id
+                WHERE c.user_id = ?
+                ORDER BY m.id DESC
+            `).all(userId);
         }
 
         res.json({
@@ -139,11 +165,7 @@ router.post('/', (req, res) => {
             });
         }
 
-        const course = db.prepare(`
-            SELECT id, name
-            FROM courses
-            WHERE id = ?
-        `).get(courseId);
+        const course = courseBelongsToUser(courseId, req.user.id);
 
         if (!course) {
             return res.status(404).json({
@@ -221,11 +243,7 @@ router.post('/upload', upload.single('pdf'), (req, res) => {
             });
         }
 
-        const course = db.prepare(`
-            SELECT id, name
-            FROM courses
-            WHERE id = ?
-        `).get(courseId);
+        const course = courseBelongsToUser(courseId, req.user.id);
 
         if (!course) {
             if (req.file) {
@@ -344,22 +362,81 @@ function splitIntoPages(fullText) {
 // (a chapter-overview / table-of-contents page) is folded into the
 // section it introduces. Consecutive pages sharing a label become one
 // section, so a section can span multiple pages.
+//
+// Not every PDF numbers its subsections that way - some have real
+// section titles and page numbers but no "6.1"-style label at all
+// (just "Propositions", "Truth Tables", etc. repeated on each page of
+// that section). Without a fallback for that, none of those pages ever
+// matched, every page fell back to one giant "Untitled Section" for the
+// whole document, and processing effectively produced nothing useful.
+// Two extra patterns are tried per line, in that order:
+//   1. "Chapter 6: Title" / "Unit 3 - Title" / "Lecture 2 Title" -
+//      still has a number, just not the "6.1" decimal shape.
+//   2. Any other short (<=80 char) line starting with a capital letter,
+//      but ONLY if that exact line repeats verbatim on 2+ pages of this
+//      document - the same "same label reappears on most pages" signal
+//      the numbered case relies on, just without requiring a number.
+//      Requiring a repeat is what keeps this from grabbing random
+//      one-off body text as a fake section boundary.
 function detectSections(pages) {
-    const labelPattern = /^(\d+\.\d+)\s+([A-Z][^\n]{1,80})$/;
+    const numberedPattern = /^(\d+\.\d+)\s+([A-Z][^\n]{1,80})$/;
+    const chapterPattern = /^((?:Chapter|Unit|Section|Lecture|Lesson)\s+\d+\s*[:.\-]?\s*[A-Z][^\n]{1,80})$/i;
+    const looseHeadingPattern = /^[A-Z][^\n]{1,80}$/;
+
+    // Count how many distinct pages each unnumbered heading-shaped line
+    // appears on, so only genuinely repeating titles are trusted.
+    const unnumberedPageCounts = new Map();
+    for (const p of pages) {
+        const lines = p.content.split('\n').map((l) => l.trim()).filter(Boolean);
+        const seenOnThisPage = new Set();
+        for (const line of lines) {
+            if (numberedPattern.test(line) || chapterPattern.test(line)) continue;
+            if (looseHeadingPattern.test(line) && !seenOnThisPage.has(line)) {
+                seenOnThisPage.add(line);
+                unnumberedPageCounts.set(line, (unnumberedPageCounts.get(line) || 0) + 1);
+            }
+        }
+    }
 
     const labeled = pages.map((p) => {
         const lines = p.content.split('\n').map((l) => l.trim()).filter(Boolean);
-        const matches = lines
-            .map((line) => line.match(labelPattern))
-            .filter(Boolean)
-            .map((m) => `${m[1]} ${m[2]}`);
+
+        // Numbered/chapter matches are checked FIRST and, if any are
+        // found, are the only thing that counts for this page - a slide
+        // that says "6.1 Class and Object" often also has its own
+        // unrelated subheading on it (e.g. "Getters and Setters"), and if
+        // that subheading happens to repeat on another page too, it would
+        // otherwise get counted as a second candidate and wrongly
+        // disqualify a page that actually has a perfectly good numbered
+        // label. The loose unnumbered fallback only gets a turn on pages
+        // that have no numbered/chapter heading at all.
+        const strongMatches = [];
+        for (const line of lines) {
+            const numbered = line.match(numberedPattern);
+            if (numbered) { strongMatches.push(`${numbered[1]} ${numbered[2]}`); continue; }
+
+            const chapter = line.match(chapterPattern);
+            if (chapter) strongMatches.push(chapter[1]);
+        }
+
+        let matches = strongMatches;
+        if (matches.length === 0) {
+            matches = lines.filter((line) =>
+                looseHeadingPattern.test(line) && (unnumberedPageCounts.get(line) || 0) >= 2
+            );
+        }
+
+        // Dedupe first (the same heading can legitimately appear twice on
+        // one page - e.g. once in a header, once repeated in a footer -
+        // that's still only ONE subsection, not several).
+        const uniqueMatches = [...new Set(matches)];
 
         // A page naming exactly one subsection is confidently "on" that
         // subsection. A page naming several (a table-of-contents /
         // chapter-overview page listing 6.1, 6.2, 6.3...) isn't reliably
         // about any single one of them, so leave it unlabeled and let it
         // fold into whichever section follows it.
-        const label = matches.length === 1 ? matches[0] : null;
+        const label = uniqueMatches.length === 1 ? uniqueMatches[0] : null;
         return { page_number: p.page_number, label };
     });
 
@@ -401,18 +478,46 @@ function detectSections(pages) {
 // Run cpp_engine/sectionTaskManager.exe: pipe sections in (pipe-delimited,
 // one per line), get tasks out (key=value, one per line) - same CLI
 // contract studyTracker.cpp already uses for the Node <-> C++ boundary.
+//
+// Deliberately NOT called from inside a db.transaction() - execFileSync
+// blocks on an external process, and better-sqlite3 transactions should
+// stay short, DB-only operations. Throws on any failure (missing exe,
+// non-zero exit, or output that doesn't match the expected shape at all)
+// with a message that names exactly what went wrong, instead of quietly
+// returning an empty task list - a caller that wants "sections saved even
+// if task generation fails" should catch this explicitly, not rely on it
+// failing silently.
 function runSectionTaskManager(sectionRows) {
     const exePath = path.join(__dirname, '../../cpp_engine/sectionTaskManager.exe');
+
+    if (!fs.existsSync(exePath)) {
+        throw new Error(`sectionTaskManager.exe not found at ${exePath} - rebuild it with: g++ -std=c++17 -O2 -o cpp_engine/sectionTaskManager.exe cpp_engine/sectionTaskManager.cpp`);
+    }
 
     const input = sectionRows
         .map((s) => [s.id, s.title, s.start_page, s.end_page, s.estimated_minutes, s.difficulty].join('|'))
         .join('\n') + '\n';
 
-    const stdout = execFileSync(exePath, [], { input, encoding: 'utf8' });
+    let stdout;
+    try {
+        stdout = execFileSync(exePath, [], { input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    } catch (err) {
+        // err.stderr/err.stdout are populated by execFileSync on a
+        // non-zero exit or spawn failure - surface all of it so a real
+        // failure (missing DLL, crash, antivirus block, etc.) is visible
+        // instead of looking like "0 tasks" for no reason.
+        const details = [
+            err.message,
+            err.stderr ? `stderr: ${String(err.stderr).slice(0, 500)}` : null,
+            err.stdout ? `stdout: ${String(err.stdout).slice(0, 500)}` : null
+        ].filter(Boolean).join(' | ');
+        throw new Error(`sectionTaskManager.exe failed to run: ${details}`);
+    }
 
     const tasks = [];
     const lineRe = /section_id=(\d+)\s+priority=(\d+)\s+status=(.+)$/;
-    for (const line of stdout.split('\n')) {
+    for (const rawLine of stdout.split('\n')) {
+        const line = rawLine.replace(/\r$/, ''); // tolerate Windows CRLF output
         const m = line.match(lineRe);
         if (m) {
             tasks.push({
@@ -422,7 +527,42 @@ function runSectionTaskManager(sectionRows) {
             });
         }
     }
+
+    if (tasks.length === 0 && sectionRows.length > 0) {
+        // The exe ran (no throw above) but produced nothing we could
+        // parse for a non-empty input - that's exactly the "silent
+        // failure" this function exists to prevent, so treat it as an
+        // error with the raw output attached for diagnosis.
+        throw new Error(
+            `sectionTaskManager.exe ran but produced 0 parseable task lines for ${sectionRows.length} section(s). ` +
+            `Raw output (first 500 chars): ${JSON.stringify(stdout.slice(0, 500))}`
+        );
+    }
+
     return tasks;
+}
+
+// Insert tasks for a batch of already-persisted sections, in one small
+// transaction. Separate from section/page insertion so a slow/failing
+// C++ call never happens while a write transaction is open.
+function insertTasksForSections(insertedSections) {
+    if (insertedSections.length === 0) return [];
+
+    const tasksFromCpp = runSectionTaskManager(insertedSections);
+
+    const insertTask = db.prepare(`
+        INSERT INTO tasks (section_id, priority, deadline, status)
+        VALUES (?, ?, NULL, ?)
+    `);
+
+    const applyInsert = db.transaction((rows) => {
+        return rows.map((t) => {
+            const info = insertTask.run(t.section_id, t.priority, t.status);
+            return { id: info.lastInsertRowid, ...t };
+        });
+    });
+
+    return applyInsert(tasksFromCpp);
 }
 
 // ==========================================
@@ -443,16 +583,7 @@ router.post('/:id/process', async (req, res) => {
             });
         }
 
-        const material = db.prepare(`
-            SELECT
-                id,
-                course_id,
-                filename,
-                file_path,
-                status
-            FROM materials
-            WHERE id = ?
-        `).get(materialId);
+        const material = materialOwnedByUser(materialId, req.user.id);
 
         if (!material) {
             return res.status(404).json({
@@ -483,11 +614,13 @@ router.post('/:id/process', async (req, res) => {
         const pages = splitIntoPages(result.text);
         const detectedSections = detectSections(pages);
 
-        // Everything below is one atomic, idempotent unit: reprocessing
-        // the same material clears only ITS OWN pages/sections/tasks
-        // (never other materials' data) before rebuilding them.
-        const applyProcessing = db.transaction(() => {
-            // 1. material_pages (replace this material's pages only)
+        // Step 1: pages + sections, in one atomic, idempotent unit -
+        // reprocessing the same material clears only ITS OWN pages/
+        // sections/tasks (never other materials' data) before rebuilding
+        // them. Deliberately does NOT include the C++ task-generation
+        // call - that runs an external process and must not happen while
+        // a write transaction is open.
+        const applyPagesAndSections = db.transaction(() => {
             db.prepare(`DELETE FROM material_pages WHERE material_id = ?`).run(materialId);
 
             const insertPage = db.prepare(`
@@ -498,15 +631,40 @@ router.post('/:id/process', async (req, res) => {
                 insertPage.run(materialId, p.page_number, p.content);
             }
 
-            // 2. sections (replace this material's sections + their tasks only)
             const oldSectionIds = db.prepare(`
                 SELECT id FROM sections WHERE material_id = ?
             `).all(materialId).map((r) => r.id);
 
             if (oldSectionIds.length > 0) {
-                const placeholders = oldSectionIds.map(() => '?').join(',');
-                db.prepare(`DELETE FROM tasks WHERE section_id IN (${placeholders})`).run(...oldSectionIds);
-                db.prepare(`DELETE FROM sections WHERE id IN (${placeholders})`).run(...oldSectionIds);
+                const sectionPlaceholders = oldSectionIds.map(() => '?').join(',');
+
+                const oldTaskIds = db.prepare(`
+                    SELECT id FROM tasks WHERE section_id IN (${sectionPlaceholders})
+                `).all(...oldSectionIds).map((r) => r.id);
+
+                // schedules.task_id and study_sessions.task_id have no
+                // ON DELETE CASCADE (see database/schema.sql), and
+                // better-sqlite3 enforces foreign keys by default - so
+                // re-analyzing (or re-uploading) a material that already
+                // has a generated schedule block or a logged study
+                // session against its old tasks used to fail outright
+                // with "FOREIGN KEY constraint failed" the moment it
+                // tried to delete those old tasks out from under them.
+                // Those rows describe tasks that are about to stop
+                // existing, so they have to go too - reprocessing a
+                // material is meant to replace its old sections/tasks
+                // wholesale, and a schedule row pointing at a deleted
+                // task isn't something to keep around. Re-run "Regenerate
+                // Week" on the Schedule page afterward to reschedule the
+                // freshly generated tasks.
+                if (oldTaskIds.length > 0) {
+                    const taskPlaceholders = oldTaskIds.map(() => '?').join(',');
+                    db.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                    db.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                }
+
+                db.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...oldSectionIds);
+                db.prepare(`DELETE FROM sections WHERE id IN (${sectionPlaceholders})`).run(...oldSectionIds);
             }
 
             const insertSection = db.prepare(`
@@ -515,7 +673,7 @@ router.post('/:id/process', async (req, res) => {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `);
 
-            const insertedSections = detectedSections.map((s) => {
+            return detectedSections.map((s) => {
                 const info = insertSection.run(
                     material.course_id,
                     materialId,
@@ -527,45 +685,44 @@ router.post('/:id/process', async (req, res) => {
                 );
                 return { id: info.lastInsertRowid, ...s };
             });
-
-            // 3. tasks, produced by the C++ section/task engine
-            let insertedTasks = [];
-            if (insertedSections.length > 0) {
-                const tasksFromCpp = runSectionTaskManager(insertedSections);
-
-                const insertTask = db.prepare(`
-                    INSERT INTO tasks (section_id, priority, deadline, status)
-                    VALUES (?, ?, NULL, ?)
-                `);
-
-                insertedTasks = tasksFromCpp.map((t) => {
-                    const info = insertTask.run(t.section_id, t.priority, t.status);
-                    return { id: info.lastInsertRowid, ...t };
-                });
-            }
-
-            // 4. materials status/page_count
-            db.prepare(`
-                UPDATE materials
-                SET page_count = ?,
-                    status = ?
-                WHERE id = ?
-            `).run(pageCount, 'processed', materialId);
-
-            return { insertedSections, insertedTasks };
         });
 
-        const { insertedSections, insertedTasks } = applyProcessing();
+        const insertedSections = applyPagesAndSections();
+
+        // Step 2: tasks, produced by the C++ section/task engine - kept
+        // separate so a failure here (missing/broken exe) still leaves
+        // the pages/sections just saved above intact, and is reported
+        // back clearly instead of looking like "0 tasks, all good".
+        let insertedTasks = [];
+        let taskGenerationError = null;
+        try {
+            insertedTasks = insertTasksForSections(insertedSections);
+        } catch (err) {
+            console.error(`Task generation failed for material ${materialId}:`, err.message);
+            taskGenerationError = err.message;
+        }
+
+        // Step 3: mark the material processed regardless of task-generation
+        // outcome - the sections/pages are real and saved; tasks can be
+        // retried via POST /:id/regenerate-tasks without reprocessing the PDF.
+        db.prepare(`
+            UPDATE materials
+            SET page_count = ?, status = ?
+            WHERE id = ?
+        `).run(pageCount, 'processed', materialId);
 
         res.json({
             success: true,
-            message: 'PDF processed successfully',
+            message: taskGenerationError
+                ? 'PDF processed, but task generation failed - see task_generation_error'
+                : 'PDF processed successfully',
             material_id: materialId,
             filename: material.filename,
             page_count: pageCount,
             pages_stored: pages.length,
             sections: insertedSections,
             tasks: insertedTasks,
+            task_generation_error: taskGenerationError,
             text_preview: result.text.substring(0, 2000)
         });
 
@@ -581,6 +738,69 @@ router.post('/:id/process', async (req, res) => {
         if (parser) {
             await parser.destroy();
         }
+    }
+});
+
+// ==========================================
+// POST /api/materials/:id/regenerate-tasks
+// Re-run the C++ task-generation step for a material's EXISTING sections,
+// without reparsing the PDF. Use this to retry after a task_generation_error
+// from /process, or to pick up a rebuilt sectionTaskManager.exe.
+// ==========================================
+
+router.post('/:id/regenerate-tasks', (req, res) => {
+    try {
+        const materialId = Number(req.params.id);
+        const material = materialOwnedByUser(materialId, req.user.id);
+
+        if (!material) {
+            return res.status(404).json({ success: false, error: 'Material not found' });
+        }
+
+        const sections = db.prepare(`
+            SELECT id, title, start_page, end_page, estimated_minutes, difficulty
+            FROM sections WHERE material_id = ?
+        `).all(materialId);
+
+        if (sections.length === 0) {
+            return res.status(400).json({ success: false, error: 'This material has no sections yet - process it first.' });
+        }
+
+        // Clear this material's existing tasks only, then regenerate.
+        // Same FK ordering fix as /process: schedules/study_sessions rows
+        // pointing at the old tasks have to be cleared first, or the
+        // DELETE FROM tasks below fails with "FOREIGN KEY constraint
+        // failed" the moment any of those tasks has a schedule block or
+        // a logged study session against it.
+        const clearOldTasks = db.transaction(() => {
+            const sectionIds = sections.map((s) => s.id);
+            const sectionPlaceholders = sectionIds.map(() => '?').join(',');
+
+            const oldTaskIds = db.prepare(`
+                SELECT id FROM tasks WHERE section_id IN (${sectionPlaceholders})
+            `).all(...sectionIds).map((r) => r.id);
+
+            if (oldTaskIds.length > 0) {
+                const taskPlaceholders = oldTaskIds.map(() => '?').join(',');
+                db.prepare(`DELETE FROM schedules WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+                db.prepare(`DELETE FROM study_sessions WHERE task_id IN (${taskPlaceholders})`).run(...oldTaskIds);
+            }
+
+            db.prepare(`DELETE FROM tasks WHERE section_id IN (${sectionPlaceholders})`).run(...sectionIds);
+        });
+        clearOldTasks();
+
+        const insertedTasks = insertTasksForSections(sections);
+
+        res.json({
+            success: true,
+            message: `Generated ${insertedTasks.length} task(s) for ${sections.length} section(s)`,
+            material_id: materialId,
+            tasks: insertedTasks
+        });
+    } catch (error) {
+        console.error(`Regenerate tasks error for material ${req.params.id}:`, error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -602,7 +822,7 @@ router.get('/:id/sections', (req, res) => {
             });
         }
 
-        const material = db.prepare(`SELECT id FROM materials WHERE id = ?`).get(materialId);
+        const material = materialOwnedByUser(materialId, req.user.id);
 
         if (!material) {
             return res.status(404).json({
