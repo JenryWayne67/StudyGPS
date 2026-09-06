@@ -272,8 +272,8 @@
             <input type="number" id="prefBreakLength" min="0" max="60" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
           <div>
-            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Daily Cap (min)</label>
-            <input type="number" id="prefMaxDaily" min="10" max="600" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Daily Cap (hrs)</label>
+            <input type="number" id="prefMaxDaily" min="0.5" max="16" step="0.5" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
         </div>
       </div>
@@ -384,7 +384,11 @@
       document.getElementById('prefEndTime').value = preferencesCache.preferred_end || '21:00';
       document.getElementById('prefSessionLength').value = preferencesCache.session_length || 50;
       document.getElementById('prefBreakLength').value = preferencesCache.break_length ?? 10;
-      document.getElementById('prefMaxDaily').value = preferencesCache.max_daily_minutes || 120;
+      // Shown/edited in hours (what a person actually thinks in) - stored
+      // as minutes everywhere else (DB, scheduler), so it's converted
+      // right here at the UI boundary. Rounded to the nearest 0.5h so it
+      // lands on a step this field can represent.
+      document.getElementById('prefMaxDaily').value = Math.round(((preferencesCache.max_daily_minutes || 120) / 60) * 2) / 2;
 
       const daysContainer = document.getElementById('prefDaysContainer');
       daysContainer.innerHTML = DAYS_ALL.map(day => {
@@ -435,7 +439,7 @@
         preferred_end: document.getElementById('prefEndTime').value || '21:00',
         session_length: Number(document.getElementById('prefSessionLength').value) || 50,
         break_length: Number(document.getElementById('prefBreakLength').value) || 10,
-        max_daily_minutes: Number(document.getElementById('prefMaxDaily').value) || 120
+        max_daily_minutes: Math.round((Number(document.getElementById('prefMaxDaily').value) || 2) * 60)
       };
 
       await fetchJSON('/api/preferences', {

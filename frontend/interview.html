@@ -132,20 +132,21 @@
         </div>
       </div>
 
-      <!-- Max Study Time Per Day - a free-form number, not a fixed
-           dropdown, so anyone whose real limit doesn't happen to match
-           one of a handful of preset options (e.g. 5 hours, or 45
-           minutes) can actually set it. Minutes under the hood (same
-           unit backend/routes/preferences.js and schedule.html already
-           use), with a live "X hours Y minutes" readout so the number
-           itself stays easy to reason about. -->
+      <!-- Max Study Time Per Day - a free-form number of HOURS (not a
+           fixed dropdown), so anyone whose real limit doesn't happen to
+           match a preset option can actually set it. The input itself is
+           hours (what a person actually thinks in), with half-hour
+           steps for anything in between; it's converted to/from minutes
+           only at the API boundary, since max_daily_minutes is still
+           minutes under the hood in the database and the scheduler
+           (backend/routes/preferences.js, schedule.html). -->
       <div class="space-y-2">
         <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Maximum Study Limit Per Day</label>
         <div class="flex items-center gap-2">
-          <input type="number" id="maxDailyMins" min="10" max="960" step="5" value="120"
+          <input type="number" id="maxDailyHours" min="0.5" max="16" step="0.5" value="2"
             oninput="updateMaxDailyReadout()"
             class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">minutes</span>
+          <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">hours</span>
         </div>
         <p id="maxDailyReadout" class="text-[11px] text-slate-400 font-medium">2 hours</p>
       </div>
@@ -489,32 +490,30 @@
         if (rad) rad.checked = true;
       }
       if (currentPrefs.max_daily_minutes) {
-        const input = document.getElementById('maxDailyMins');
-        if (input) input.value = String(currentPrefs.max_daily_minutes);
+        const input = document.getElementById('maxDailyHours');
+        // Round to the nearest 0.5h so a value saved elsewhere (e.g. the
+        // Schedule page's own minutes-based editor) still lands on a
+        // step this input can represent, instead of silently snapping
+        // to the nearest step on the next interaction.
+        if (input) input.value = String(Math.round((currentPrefs.max_daily_minutes / 60) * 2) / 2);
       }
       updateMaxDailyReadout();
     }
 
-    // "180 minutes" alone doesn't read naturally when someone's typing an
-    // arbitrary number - shows it back as "3 hours" / "2 hours 30 minutes"
-    // so the free-form input is still easy to sanity-check.
+    // Shows the entered hours back as "3 hours" / "2.5 hours" so a
+    // fractional value is still easy to sanity-check at a glance.
     function updateMaxDailyReadout() {
-      const el = document.getElementById('maxDailyMins');
+      const el = document.getElementById('maxDailyHours');
       const readout = document.getElementById('maxDailyReadout');
       if (!el || !readout) return;
 
-      const total = Math.max(0, Number(el.value) || 0);
-      const hours = Math.floor(total / 60);
-      const mins = total % 60;
+      const hours = Math.max(0, Number(el.value) || 0);
 
-      if (total === 0) {
+      if (hours === 0) {
         readout.textContent = '';
-      } else if (hours === 0) {
-        readout.textContent = `${mins} minute${mins === 1 ? '' : 's'}`;
-      } else if (mins === 0) {
-        readout.textContent = `${hours} hour${hours === 1 ? '' : 's'}`;
       } else {
-        readout.textContent = `${hours} hour${hours === 1 ? '' : 's'} ${mins} minute${mins === 1 ? '' : 's'}`;
+        const label = Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+        readout.textContent = `${label} hour${hours === 1 ? '' : 's'}`;
       }
     }
 
@@ -571,7 +570,13 @@
 
       const sessionLen = document.querySelector('input[name="session_length"]:checked')?.value || 50;
       const breakLen = document.querySelector('input[name="break_length"]:checked')?.value || 10;
-      const maxDaily = document.getElementById('maxDailyMins')?.value || 120;
+      // The input is hours (see the Max Study Time Per Day field above) -
+      // converted to minutes here, right at the API boundary, since
+      // max_daily_minutes is still minutes under the hood.
+      const maxDailyHoursInput = Number(document.getElementById('maxDailyHours')?.value);
+      const maxDailyMinutes = Number.isFinite(maxDailyHoursInput) && maxDailyHoursInput > 0
+        ? Math.round(maxDailyHoursInput * 60)
+        : 120;
 
       const saveBtn = document.querySelector('#page2 button[onclick="finishInterview()"]');
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
@@ -605,7 +610,7 @@
             preferred_end: daySchedules[firstActiveDay]?.end || '21:00',
             session_length: Number(sessionLen),
             break_length: Number(breakLen),
-            max_daily_minutes: Number(maxDaily)
+            max_daily_minutes: maxDailyMinutes
           })
         });
         if (!prefRes.ok) throw new Error((await prefRes.json()).error || 'Could not save your preferences.');
