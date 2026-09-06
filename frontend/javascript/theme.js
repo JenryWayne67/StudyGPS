@@ -150,6 +150,13 @@
         [data-theme="dark"] select,
         [data-theme="dark"] textarea { color-scheme: dark; }
 
+        /* Swap to the dark-background StudyGPS logo variant in dark mode
+           (see .logo-img/.logo-light/.logo-dark base rules in common.css) -
+           the light variant is a white-filled square that would show as a
+           mismatched white chip on the dark sidebar otherwise. */
+        [data-theme="dark"] .logo-img.logo-light { display: none; }
+        [data-theme="dark"] .logo-img.logo-dark { display: block; }
+
         /* Theme toggle control injected by this script */
         .theme-toggle-btn {
             position: fixed;

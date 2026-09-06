@@ -84,13 +84,33 @@ body {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-md);
-  background: #ffffff;
-  color: #ffffff;
+  /* No background color here on purpose - the light/dark logo images
+     (see .logo-light/.logo-dark below) are each a solid-filled square in
+     their own right color (white for light mode, navy for dark mode), so
+     they supply their own "badge" background. A hardcoded background here
+     would show through as a mismatched border in whichever theme isn't
+     active. */
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
+}
+
+/* Light/dark StudyGPS logo swap: two <img> tags always in the markup,
+   toggled by data-theme. Default (no theme set yet, or explicitly light)
+   shows the light variant - this lives in common.css (not theme.js) so
+   the correct logo shows even before theme.js has run. theme.js's dark
+   stylesheet flips it for [data-theme="dark"]. */
+.logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.logo-img.logo-dark {
+  display: none;
 }
 
 .brand-info {
