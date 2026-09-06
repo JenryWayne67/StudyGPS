@@ -67,12 +67,39 @@
         [data-theme="dark"] .bg-slate-200 { background-color: #334155 !important; }
         [data-theme="dark"] .bg-slate-900 { background-color: #f1f5f9 !important; }
 
-        [data-theme="dark"] .text-slate-900 { color: #f1f5f9 !important; }
-        [data-theme="dark"] .text-slate-800 { color: #e2e8f0 !important; }
-        [data-theme="dark"] .text-slate-700 { color: #cbd5e1 !important; }
-        [data-theme="dark"] .text-slate-600 { color: #94a3b8 !important; }
-        [data-theme="dark"] .text-slate-500 { color: #94a3b8 !important; }
-        [data-theme="dark"] .text-slate-400 { color: #64748b !important; }
+        /* Tailwind's slash-opacity variants (bg-white/70, bg-slate-50/50,
+           ...) are their OWN classes - the plain .bg-white rule above
+           never matches them, so without these they stayed near-white in
+           dark mode. That's what made schedule.html's "Rest Day" and
+           "Nothing scheduled yet" boxes render as bright panels with
+           light text on them, i.e. effectively unreadable. The `/` has to
+           be escaped in a CSS selector. */
+        [data-theme="dark"] .bg-white\\/70 { background-color: rgba(30, 41, 59, 0.7) !important; }
+        [data-theme="dark"] .bg-white\\/60 { background-color: rgba(30, 41, 59, 0.6) !important; }
+        [data-theme="dark"] .bg-slate-50\\/50 { background-color: rgba(15, 23, 42, 0.5) !important; }
+        [data-theme="dark"] .bg-slate-50\\/70 { background-color: rgba(15, 23, 42, 0.7) !important; }
+        [data-theme="dark"] .bg-slate-200\\/80 { background-color: rgba(51, 65, 85, 0.8) !important; }
+        [data-theme="dark"] .bg-blue-50\\/10 { background-color: rgba(30, 58, 95, 0.25) !important; }
+        [data-theme="dark"] .bg-blue-50\\/20 { background-color: rgba(30, 58, 95, 0.35) !important; }
+        [data-theme="dark"] .bg-blue-50\\/40 { background-color: rgba(30, 58, 95, 0.5) !important; }
+        [data-theme="dark"] .bg-emerald-50\\/20 { background-color: rgba(6, 78, 59, 0.35) !important; }
+        [data-theme="dark"] .border-slate-200\\/80 { border-color: rgba(51, 65, 85, 0.8) !important; }
+        [data-theme="dark"] .border-slate-200\\/60 { border-color: rgba(51, 65, 85, 0.6) !important; }
+
+        /* Text scale, brightened one step relative to the naive
+           light-mode mirror. The old mapping put .text-slate-400 (used
+           across every page for times, dates, page ranges and other
+           secondary metadata) at #64748b, which is only a 3.07:1 contrast
+           ratio on a #1e293b card - under the 4.5:1 WCAG AA minimum for
+           small text, and the main reason secondary text read as "barely
+           visible" in dark mode. Every value below clears 5.7:1. */
+        [data-theme="dark"] .text-slate-900 { color: #f8fafc !important; }
+        [data-theme="dark"] .text-slate-800 { color: #f1f5f9 !important; }
+        [data-theme="dark"] .text-slate-700 { color: #e2e8f0 !important; }
+        [data-theme="dark"] .text-slate-600 { color: #cbd5e1 !important; }
+        [data-theme="dark"] .text-slate-500 { color: #b6c2d2 !important; }
+        [data-theme="dark"] .text-slate-400 { color: #94a3b8 !important; }
+        [data-theme="dark"] .text-slate-300 { color: #94a3b8 !important; }
 
         [data-theme="dark"] .border-slate-100 { border-color: #334155 !important; }
         [data-theme="dark"] .border-slate-200 { border-color: #334155 !important; }

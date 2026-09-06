@@ -207,6 +207,36 @@
     </a>
   </nav>
 
+  <!-- FULL SCREEN STUDY VIEW: PDF alongside the timer, big enough to
+       actually read while studying, instead of the small inline preview
+       squeezed into a task card. Static markup here (not rebuilt per
+       task), populated/shown via openFullscreen()/closeFullscreen(). -->
+  <div id="pdfFullscreenOverlay" class="hidden fixed inset-0 z-[100] bg-white flex flex-col">
+    <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 bg-white flex-shrink-0">
+      <div class="min-w-0">
+        <h2 id="fsTitle" class="text-sm font-bold text-slate-900 truncate"></h2>
+        <p id="fsSubtitle" class="text-xs text-slate-500 truncate"></p>
+      </div>
+      <button type="button" onclick="closeFullscreen()" class="btn btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        Close
+      </button>
+    </div>
+    <div class="flex-1 flex flex-col lg:flex-row min-h-0">
+      <!-- On a phone the two panes stack, so the PDF is given a floor of
+           half the screen and the timer panel a matching ceiling (it
+           scrolls internally past that) - otherwise the timer's controls
+           push the PDF down into an unusably short strip. From lg: up
+           they sit side by side and neither cap applies. -->
+      <div class="flex-1 min-h-[50vh] lg:min-h-0 bg-slate-100">
+        <iframe id="fsPdfFrame" src="about:blank" class="w-full h-full border-0" title="Study material"></iframe>
+      </div>
+      <div class="w-full lg:w-80 flex-shrink-0 max-h-[45vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 p-5 overflow-y-auto">
+        <div id="fsTimerPanel"><!-- Populated via renderFullscreenTimerPanel() --></div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // State management
     let activeTaskId = null;
@@ -231,6 +261,118 @@
         openPdfTaskIds.add(taskId);
       }
       renderTasks();
+    }
+
+    // Which task the full screen study view is currently showing (null =
+    // closed). Separate from the timer's own activeTaskId - you can open
+    // full screen for a task before starting its timer, and the timer
+    // panel inside full screen switches between a "Start Studying" CTA
+    // and the real running controls based on whether this task IS the
+    // one with an active timer.
+    let fullscreenTaskId = null;
+
+    function openFullscreen(taskId) {
+      const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
+      if (!task || !task.material_id) return;
+
+      fullscreenTaskId = Number(taskId);
+
+      document.getElementById('fsTitle').textContent = task.title;
+      document.getElementById('fsSubtitle').textContent =
+        task.course_name + (task.material_name ? ` · ${task.material_name}` : '');
+      document.getElementById('fsPdfFrame').src =
+        `/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}`;
+
+      renderFullscreenTimerPanel();
+
+      document.getElementById('pdfFullscreenOverlay').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeFullscreen() {
+      fullscreenTaskId = null;
+      document.getElementById('pdfFullscreenOverlay').classList.add('hidden');
+      document.getElementById('fsPdfFrame').src = 'about:blank';
+      document.body.style.overflow = '';
+    }
+
+    // Rebuilds the full screen panel's timer/CTA area from current state.
+    // Cheap enough to call after any action that could change what it
+    // should show (starting, pausing, resuming, resetting, finishing) -
+    // only the ticking seconds themselves are handled by the lighter
+    // updateTimerDisplay()/setPauseResumeVisibility() instead.
+    function renderFullscreenTimerPanel() {
+      const panel = document.getElementById('fsTimerPanel');
+      if (!panel || fullscreenTaskId == null) return;
+
+      const task = allTasksCache.find(t => Number(t.id) === fullscreenTaskId);
+      const isDone = task && task.status === 'Completed';
+      const isCurrentActive = isTimerActive && Number(fullscreenTaskId) === Number(activeTaskId);
+
+      if (isDone) {
+        panel.innerHTML = `
+          <div class="text-center py-10">
+            <span class="text-sm font-bold text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-200 inline-block">✓ Task Completed</span>
+          </div>
+        `;
+        return;
+      }
+
+      if (!isCurrentActive) {
+        panel.innerHTML = `
+          <div class="text-center py-10 space-y-3">
+            <p class="text-xs text-slate-500">Ready when you are.</p>
+            <button type="button" onclick="startTaskTimer(${fullscreenTaskId})" class="btn btn-primary shadow-sm flex items-center gap-2 mx-auto">
+              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Start Studying
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      const m = Math.floor(remainingSeconds / 60);
+      const s = remainingSeconds % 60;
+      const timeFormatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
+
+      panel.innerHTML = `
+        <div class="space-y-5">
+          <div class="text-center">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">ACTIVE STUDY TIMER</span>
+            <div id="fsTimeDisplay" class="font-mono text-5xl font-extrabold text-slate-900 tracking-tight my-2">${timeFormatted}</div>
+            <span id="fsStateLabel" class="text-xs font-semibold text-slate-400 block">${isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused')}</span>
+            <span id="fsEndTime" class="text-xs font-semibold text-slate-400 block">${isRunning ? `Ends at ${formatEndClock(remainingSeconds)}` : `Will end ~${Math.ceil(remainingSeconds / 60)} min after you start`}</span>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+              <div id="fsProgressBar" class="bg-blue-600 h-full rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
+            </div>
+            <div class="text-center text-[11px] font-medium text-slate-500">Target: ${plannedMinutes} minutes</div>
+          </div>
+
+          <div class="flex items-center justify-center gap-2">
+            <button id="fsBtnPause" onclick="pauseTimer()" class="${isRunning ? '' : 'hidden'} py-2 px-3.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+              <span>⏸</span> Pause
+            </button>
+            <button id="fsBtnResume" onclick="resumeTimer()" class="${isRunning ? 'hidden' : ''} py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+              <span>▶</span> ${remainingSeconds === totalSeconds ? 'Start' : 'Resume'}
+            </button>
+          </div>
+
+          <div class="flex items-center justify-center gap-1.5">
+            <span class="text-slate-400 text-[10px]">Add:</span>
+            <button type="button" onclick="addTime(5)" class="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded text-[10px] font-semibold transition">+5m</button>
+            <button type="button" onclick="addTime(15)" class="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded text-[10px] font-semibold transition">+15m</button>
+            <button type="button" onclick="resetTimer()" class="px-2 py-0.5 bg-white hover:bg-rose-50 border border-slate-200 text-slate-600 hover:text-rose-600 rounded text-[10px] font-semibold transition">Reset</button>
+          </div>
+
+          <button onclick="finishTimer()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5">
+            <span>✓</span> Complete Task
+          </button>
+        </div>
+      `;
     }
 
     // Real data, loaded from the backend once and re-rendered locally as
@@ -316,13 +458,7 @@
       renderTasks();
       if (autoStart) startInterval();
       updateTimerDisplay();
-
-      // If Fullscreen Study Mode is open for this same task, it was
-      // showing the "not started yet" state (no timer controls, since
-      // fsTimeDisplay etc. only exist once isActive is true) - rebuild it
-      // now so its timer panel appears without the person needing to
-      // close and reopen fullscreen.
-      if (fullscreenTaskId === activeTaskId) renderFullscreenOverlay();
+      renderFullscreenTimerPanel(); // no-op if full screen isn't open
 
       const card = document.getElementById(`task-card-${activeTaskId}`);
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -333,152 +469,8 @@
       isRunning = false;
       isTimerActive = false;
       activeTaskId = null;
-      closeFullscreenStudy();
       renderTasks();
-    }
-
-    // ==========================================
-    // FULLSCREEN STUDY MODE
-    // A true fullscreen overlay (via the browser's Fullscreen API, with a
-    // plain fixed-position fallback if that's blocked/unsupported) showing
-    // the task's PDF large on one side and a compact copy of the timer on
-    // the other, so a person can read and watch their countdown at once
-    // without the rest of the page's chrome around it. It's a separate DOM
-    // tree from the inline card timer, not a replacement for it - the
-    // timer functions (pause/resume/addTime/finishTimer/resetTimer)
-    // already read/write the same shared state variables, so this only
-    // needs its own copy of the *display* elements (fs-prefixed ids) kept
-    // in sync by the same functions, not a second timer implementation.
-    // ==========================================
-
-    let fullscreenTaskId = null;
-
-    function openFullscreenStudy(taskId) {
-      const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
-      if (!task) return;
-
-      fullscreenTaskId = Number(taskId);
-      renderFullscreenOverlay();
-
-      const overlay = document.getElementById('fullscreenStudyOverlay');
-      if (overlay && overlay.requestFullscreen) {
-        overlay.requestFullscreen().catch(() => {
-          // Fullscreen API blocked/unsupported (e.g. iframe permissions,
-          // some mobile browsers) - the overlay still covers the full
-          // viewport via fixed positioning, so studying still works fine.
-        });
-      }
-    }
-
-    function closeFullscreenStudy() {
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      }
-      const overlay = document.getElementById('fullscreenStudyOverlay');
-      if (overlay) overlay.remove();
-      fullscreenTaskId = null;
-    }
-
-    // Exiting fullscreen via Esc (browser-native, not our close button)
-    // should tear down the overlay too, not leave a full-viewport div
-    // sitting there without real fullscreen behind it.
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement && document.getElementById('fullscreenStudyOverlay')) {
-        document.getElementById('fullscreenStudyOverlay').remove();
-        fullscreenTaskId = null;
-      }
-    });
-
-    function renderFullscreenOverlay() {
-      const existing = document.getElementById('fullscreenStudyOverlay');
-      if (existing) existing.remove();
-      if (!fullscreenTaskId) return;
-
-      const task = allTasksCache.find(t => Number(t.id) === Number(fullscreenTaskId));
-      if (!task) return;
-
-      const isActive = isTimerActive && Number(activeTaskId) === Number(fullscreenTaskId);
-      const m = Math.floor(remainingSeconds / 60);
-      const s = remainingSeconds % 60;
-      const timeFormatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
-
-      const overlay = document.createElement('div');
-      overlay.id = 'fullscreenStudyOverlay';
-      overlay.className = 'fixed inset-0 z-[999] bg-slate-900 flex flex-col';
-      overlay.innerHTML = `
-        <div class="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-slate-700 bg-slate-800">
-          <div class="min-w-0">
-            <h2 class="text-sm font-bold text-white truncate">${task.title}</h2>
-            <p class="text-xs text-slate-400 truncate">${task.course_name}${task.material_name ? ` · ${task.material_name}` : ''}</p>
-          </div>
-          <button type="button" onclick="closeFullscreenStudy()" class="shrink-0 py-2 px-3.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
-            ✕ Exit Fullscreen
-          </button>
-        </div>
-
-        <div class="flex-1 flex flex-col lg:flex-row min-h-0">
-          <div class="flex-1 min-h-0 p-3">
-            ${task.material_id ? `
-              <iframe
-                src="/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}"
-                class="w-full h-full rounded-xl border border-slate-700 bg-white"
-                title="${task.material_name || 'Study material'}"
-              ></iframe>
-            ` : `
-              <div class="w-full h-full rounded-xl border border-slate-700 bg-slate-800 flex items-center justify-center text-slate-400 text-sm">
-                No PDF linked to this task.
-              </div>
-            `}
-          </div>
-
-          <div class="lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-700 bg-slate-800 p-4 sm:p-5 space-y-4">
-            <div class="flex items-center gap-3">
-              <div class="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0">⏱</div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="text-[10px] font-bold uppercase tracking-widest text-blue-400">STUDY TIMER</span>
-                  <span class="text-[11px] font-semibold text-slate-400" id="fsStateLabel">${isActive ? (isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused')) : ''}</span>
-                </div>
-                <span id="fsTimeDisplay" class="font-mono text-3xl font-extrabold text-white tracking-tight block">${isActive ? timeFormatted : '--:--'}</span>
-                <span id="fsEndTime" class="text-[11px] font-semibold text-slate-400 block">${isActive ? (isRunning ? `Ends at ${formatEndClock(remainingSeconds)}` : `Will end ~${Math.ceil(remainingSeconds / 60)} min after you start`) : ''}</span>
-              </div>
-            </div>
-
-            ${isActive ? `
-              <div class="space-y-1.5">
-                <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div id="fsProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
-                </div>
-                <p class="text-[11px] font-medium text-slate-400">Target: ${plannedMinutes} minutes</p>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-2">
-                <button id="fsBtnPause" onclick="pauseTimer()" class="${isRunning ? '' : 'hidden'} flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
-                  <span>⏸</span> Pause
-                </button>
-                <button id="fsBtnResume" onclick="resumeTimer()" class="${isRunning ? 'hidden' : ''} flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
-                  <span>▶</span> ${remainingSeconds === totalSeconds ? 'Start' : 'Resume'}
-                </button>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <button type="button" onclick="addTime(5)" class="flex-1 px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-[11px] font-semibold transition">+5m</button>
-                <button type="button" onclick="addTime(15)" class="flex-1 px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-[11px] font-semibold transition">+15m</button>
-                <button type="button" onclick="resetTimer()" class="flex-1 px-2 py-1.5 bg-slate-700 hover:bg-rose-900 text-slate-200 hover:text-rose-300 rounded-lg text-[11px] font-semibold transition">Reset</button>
-              </div>
-              <button type="button" onclick="finishTimer()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5">
-                <span>✓</span> Complete Task
-              </button>
-            ` : `
-              <button type="button" onclick="startTaskTimer(${task.id})" class="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5">
-                <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                Start Studying
-              </button>
-            `}
-          </div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
+      renderFullscreenTimerPanel(); // switches back to the Start CTA if open
     }
 
     // Projected wall-clock finish time if the remaining countdown ran
@@ -494,32 +486,55 @@
       return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
     }
 
+    // Updates whichever timer panel(s) are actually in the DOM right now -
+    // the inline one on the task card, the full screen one, or both at
+    // once (full screen can be open for the same task the card's inline
+    // panel is showing). Each panel uses the same element-id suffixes
+    // with a different prefix ('inline' vs 'fs'), so one loop covers both
+    // without the two panels needing to know about each other.
     function updateTimerDisplay() {
       const m = Math.floor(remainingSeconds / 60);
       const s = remainingSeconds % 60;
-      const timeText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      const timeFormatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
+      const stateText = isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused');
       const endText = isRunning
         ? `Ends at ${formatEndClock(remainingSeconds)}`
         : `Will end ~${Math.ceil(remainingSeconds / 60)} min after you start`;
-      const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
-      const stateText = isRunning ? 'Focusing...' : (remainingSeconds === totalSeconds ? 'Ready to start' : 'Paused');
 
-      // Two possible places this needs to show up: the inline panel on
-      // the task card, and (if open) the Fullscreen Study Mode overlay -
-      // updated together so switching between them never shows stale
-      // digits. Each id is optional (getElementById returns null when
-      // that view isn't currently on screen), so every write is guarded.
-      for (const prefix of ['inline', 'fs']) {
+      ['inline', 'fs'].forEach((prefix) => {
         const displayEl = document.getElementById(`${prefix}TimeDisplay`);
-        const progressEl = document.getElementById(`${prefix}ProgressBar`);
-        const stateLabelEl = document.getElementById(`${prefix}StateLabel`);
-        const endTimeEl = document.getElementById(`${prefix}EndTime`);
+        if (!displayEl) return; // that panel isn't currently rendered
 
-        if (displayEl) displayEl.textContent = timeText;
-        if (endTimeEl) endTimeEl.textContent = endText;
+        displayEl.textContent = timeFormatted;
+
+        const progressEl = document.getElementById(`${prefix}ProgressBar`);
         if (progressEl) progressEl.style.width = `${percent}%`;
+
+        const stateLabelEl = document.getElementById(`${prefix}StateLabel`);
         if (stateLabelEl) stateLabelEl.textContent = stateText;
-      }
+
+        const endTimeEl = document.getElementById(`${prefix}EndTime`);
+        if (endTimeEl) endTimeEl.textContent = endText;
+      });
+    }
+
+    // Shows/hides the Pause vs Resume button on whichever panel(s) have
+    // one, same dual-prefix approach as updateTimerDisplay().
+    function setPauseResumeVisibility() {
+      ['inline', 'fs'].forEach((prefix) => {
+        const btnPause = document.getElementById(`${prefix}BtnPause`);
+        const btnResume = document.getElementById(`${prefix}BtnResume`);
+        if (!btnPause || !btnResume) return;
+
+        if (isRunning) {
+          btnPause.classList.remove('hidden');
+          btnResume.classList.add('hidden');
+        } else {
+          btnPause.classList.add('hidden');
+          btnResume.classList.remove('hidden');
+        }
+      });
     }
 
     function startInterval() {
@@ -535,26 +550,16 @@
       }, 1000);
     }
 
-    function setPauseResumeButtons(showPause) {
-      for (const prefix of ['inline', 'fs']) {
-        const btnPause = document.getElementById(`${prefix}BtnPause`);
-        const btnResume = document.getElementById(`${prefix}BtnResume`);
-        if (!btnPause || !btnResume) continue;
-        btnPause.classList.toggle('hidden', !showPause);
-        btnResume.classList.toggle('hidden', showPause);
-      }
-    }
-
     function pauseTimer() {
       isRunning = false;
       clearInterval(timerInterval);
-      setPauseResumeButtons(false);
+      setPauseResumeVisibility();
       updateTimerDisplay();
     }
 
     function resumeTimer() {
       isRunning = true;
-      setPauseResumeButtons(true);
+      setPauseResumeVisibility();
       updateTimerDisplay();
       startInterval();
     }
@@ -570,7 +575,7 @@
       pauseTimer();
       remainingSeconds = totalSeconds;
       updateTimerDisplay();
-      setPauseResumeButtons(false);
+      setPauseResumeVisibility();
     }
 
     async function finishTimer() {
@@ -599,6 +604,11 @@
       closeActiveTimer();
       await loadTasks();
       renderTasks();
+      // Re-render again now that allTasksCache reflects the real
+      // Completed status - closeActiveTimer()'s earlier call happened
+      // before loadTasks(), so it would've shown the stale "Start
+      // Studying" CTA instead of the completed state.
+      renderFullscreenTimerPanel();
     }
 
     function renderTasks() {
@@ -658,9 +668,9 @@
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path><path d="M6 6h10"></path><path d="M6 10h10"></path></svg>
                     ${openPdfTaskIds.has(task.id) ? 'Hide PDF' : 'View PDF'}
                   </button>
-                  <button type="button" onclick="openFullscreenStudy(${task.id})" title="Fullscreen: PDF + timer side by side" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
+                  <button type="button" onclick="openFullscreen(${task.id})" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
-                    Fullscreen
+                    Full Screen
                   </button>
                 ` : ''}
                 ${isDone ? `
@@ -767,6 +777,10 @@
         upcomingContainer.innerHTML = upcomingTasks.map(createCard).join('');
       }
     }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && fullscreenTaskId != null) closeFullscreen();
+    });
 
     document.addEventListener('DOMContentLoaded', async () => {
       // Sync user profile

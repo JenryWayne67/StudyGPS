@@ -464,3 +464,54 @@ body {
     background-color: rgba(30, 41, 59, 0.96);
   }
 }
+
+/* ==========================================================================
+   TOUCH TARGETS ON SMALL SCREENS
+
+   The layouts themselves already reflow correctly down to 320px (no
+   horizontal overflow anywhere), but several controls were rendering far
+   too small to tap reliably on a phone - measured on the live site at
+   320px wide, the AM/PM toggles in the day-schedule rows were only 19px
+   tall, the hour/minute dropdowns 28px, and checkboxes 16px. WCAG 2.5.5
+   and both mobile platform guidelines ask for roughly 44px.
+
+   These rules raise the controls themselves rather than restructuring the
+   markup, because most of these rows are generated as HTML strings in
+   page scripts - a CSS floor fixes every generated instance at once and
+   can't fall out of sync with them. Verified at 320px: heights go to
+   36-38px and nothing starts overflowing.
+   ========================================================================== */
+@media (max-width: 860px) {
+  select,
+  input[type="time"],
+  input[type="number"],
+  input[type="date"] {
+    min-height: 38px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+
+  button,
+  [role="button"] {
+    min-height: 36px;
+    min-width: 34px;
+    touch-action: manipulation;
+  }
+
+  /* 16px is the threshold below which iOS Safari zooms the page in when a
+     field is focused - which then leaves the person zoomed and scrolled
+     sideways. Only applied to the roomy free-text fields; the compact
+     hour/minute selects keep their smaller type so the time rows stay on
+     one line at 320px. */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  textarea {
+    font-size: 16px;
+  }
+}
