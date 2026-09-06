@@ -361,10 +361,21 @@
 
         // Fall back to the highest-priority pending task as the recommendation.
         const nextTask = tasks.find(t => t.status !== 'Completed');
+        const recBtn = document.getElementById('recTaskBtn');
         if (nextTask) {
           document.getElementById('recTaskTitle').textContent = nextTask.title;
-          document.getElementById('recTaskMeta').textContent = `${nextTask.course_name} • ${nextTask.estimated_minutes} min`;
-          document.getElementById('recTaskBtn').href = `tasks.html?task_id=${nextTask.id}`;
+          document.getElementById('recTaskMeta').textContent = `${nextTask.course_name || 'Study'} • ${nextTask.estimated_minutes || '—'} min`;
+          recBtn.href = `tasks.html?task_id=${nextTask.id}`;
+          recBtn.textContent = 'Study Now ⏱';
+        } else {
+          // No pending task at all (everything completed, or none added
+          // yet) - previously this left the hardcoded placeholder task
+          // ("Logical Operators") on screen forever since nothing here
+          // ever overwrote it.
+          document.getElementById('recTaskTitle').textContent = 'All caught up!';
+          document.getElementById('recTaskMeta').textContent = 'No pending tasks right now.';
+          recBtn.href = 'tasks.html';
+          recBtn.textContent = 'Add a Task';
         }
       }
     });
