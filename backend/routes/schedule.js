@@ -100,8 +100,55 @@ function formatDate(date) {
     return `${y}-${m}-${d}`;
 }
 
-// Build one SLOT per upcoming day that falls on one of the user's study
-// days, for the next DAYS_TO_PLAN days starting today (dayIndex 0).
+// A day's start/end is when the user is AVAILABLE, not a promise that
+// every one of those minutes should be filled with back-to-back sessions.
+// A long window (e.g. 2:30pm-10:00pm) realistically has to make room for
+// dinner and a break in the evening, not just the short inter-session
+// breaks used between study chunks. So any day whose window spans this
+// range gets split into an "afternoon" slot and a "night" slot around it,
+// the same way a person would actually plan their evening.
+//
+// Fixed for now rather than a new preference - a sensible default that
+// covers the common dinner/wind-down slot. Worth making configurable if
+// users want to shift it.
+const LONG_BREAK_START_MINUTES = timeToMinutes('18:00'); // 6:00 PM
+const LONG_BREAK_END_MINUTES = timeToMinutes('19:30');   // 7:30 PM
+const MIN_USABLE_SEGMENT_MINUTES = 30; // a sliver shorter than this isn't worth its own session
+
+function splitAroundLongBreak(startMinutes, endMinutes) {
+    // Only carve out a dinner break when the window genuinely SPANS it -
+    // starts at/before 6:00pm AND runs past 7:30pm. A window that starts
+    // later than 6:00pm (e.g. the weekday 6:30pm-10:00pm case) means
+    // dinner already happened before study time even begins, so there's
+    // nothing to split out of it.
+    const spansBreak = startMinutes <= LONG_BREAK_START_MINUTES && endMinutes >= LONG_BREAK_END_MINUTES;
+    if (!spansBreak) {
+        return [{ startMinutes, endMinutes }];
+    }
+
+    const beforeEnd = Math.min(endMinutes, LONG_BREAK_START_MINUTES);
+    const afterStart = Math.max(startMinutes, LONG_BREAK_END_MINUTES);
+
+    const segments = [];
+    if (beforeEnd - startMinutes >= MIN_USABLE_SEGMENT_MINUTES) {
+        segments.push({ startMinutes, endMinutes: beforeEnd });
+    }
+    if (endMinutes - afterStart >= MIN_USABLE_SEGMENT_MINUTES) {
+        segments.push({ startMinutes: afterStart, endMinutes });
+    }
+
+    // Both sides too small to bother with (e.g. someone's only free time IS
+    // 6:00-7:30pm) - keep the original window rather than losing the day.
+    if (segments.length === 0) {
+        return [{ startMinutes, endMinutes }];
+    }
+    return segments;
+}
+
+// Build one or more SLOTs per upcoming day that falls on one of the user's
+// study days, for the next DAYS_TO_PLAN days starting today (dayIndex 0).
+// A day's available window may be split into more than one slot - see
+// splitAroundLongBreak() above.
 function buildSlotsAndDateMap(preferences) {
     const studyDays = new Set(
         (preferences.study_days || '')
@@ -130,12 +177,15 @@ function buildSlotsAndDateMap(preferences) {
             // which is why per-day hours set during onboarding never took
             // effect.
             const window = getDayWindow(preferences, dayLabel);
-            slots.push({
-                dayLabel,
-                dayIndex,
-                startMinutes: timeToMinutes(window.start),
-                endMinutes: timeToMinutes(window.end)
-            });
+            const segments = splitAroundLongBreak(timeToMinutes(window.start), timeToMinutes(window.end));
+            for (const seg of segments) {
+                slots.push({
+                    dayLabel,
+                    dayIndex,
+                    startMinutes: seg.startMinutes,
+                    endMinutes: seg.endMinutes
+                });
+            }
         }
     }
 
