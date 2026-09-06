@@ -6,6 +6,99 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// A custom task (added by the user directly from Tasks & Timer, not
+// derived from an uploaded PDF) still needs a course + section row to fit
+// the existing tasks/schedules data model - schedule.js's scheduler picks
+// up ANY pending task via `tasks JOIN sections JOIN courses WHERE
+// c.user_id = ?`, so a custom task rides along into the real schedule for
+// free as long as it's stored the same way. Every user gets exactly one
+// personal "catch-all" course, created lazily on their first custom task,
+// so they're never asked to pick/create a course just to jot down "buy
+// notebook" or "call study group".
+const PERSONAL_COURSE_NAME = 'Personal Tasks';
+
+async function ensurePersonalCourseId(userId) {
+    const existing = await db.prepare(`
+        SELECT id FROM courses WHERE user_id = ? AND name = ?
+    `).get(userId, PERSONAL_COURSE_NAME);
+
+    if (existing) return existing.id;
+
+    const info = await db.prepare(`
+        INSERT INTO courses (user_id, name) VALUES (?, ?)
+    `).run(userId, PERSONAL_COURSE_NAME);
+
+    return info.lastInsertRowid;
+}
+
+// ==========================================
+// POST /api/tasks
+// Add a standalone task the user typed in themselves - e.g. "Finish
+// worksheet 3" or "Call study group" - with no PDF/material behind it.
+// Stored as a section (material_id left NULL) + task under this user's
+// personal catch-all course, so it shows up on the Tasks page and is
+// picked up by schedule.js's /api/schedule/generate exactly like any
+// material-derived task, without any change needed there.
+// ==========================================
+router.post('/', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const body = req.body || {};
+
+        const title = String(body.title || '').trim();
+        if (!title) {
+            return res.status(400).json({ success: false, error: 'Task title is required.' });
+        }
+
+        const estimatedMinutes = Number(body.estimated_minutes);
+        if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+            return res.status(400).json({ success: false, error: 'estimated_minutes must be a positive number.' });
+        }
+
+        // Same priority scale sectionTaskManager.cpp uses for PDF-derived
+        // tasks (difficulty*10 + up to ~20 for length), so a custom task
+        // competes fairly for schedule slots instead of always winning or
+        // always losing against real material tasks.
+        const priorityInput = String(body.priority || 'medium').toLowerCase();
+        const priorityMap = { low: 20, medium: 45, high: 70 };
+        const priority = priorityMap[priorityInput] ?? priorityMap.medium;
+
+        const deadline = body.deadline ? String(body.deadline) : null;
+
+        const courseId = await ensurePersonalCourseId(userId);
+
+        const sectionInfo = await db.prepare(`
+            INSERT INTO sections (course_id, title, start_page, end_page, estimated_minutes, difficulty, material_id)
+            VALUES (?, ?, NULL, NULL, ?, 1, NULL)
+        `).run(courseId, title, estimatedMinutes);
+
+        const taskInfo = await db.prepare(`
+            INSERT INTO tasks (section_id, priority, deadline, status)
+            VALUES (?, ?, ?, 'Not Started')
+        `).run(sectionInfo.lastInsertRowid, priority, deadline);
+
+        res.json({
+            success: true,
+            task: {
+                id: taskInfo.lastInsertRowid,
+                section_id: sectionInfo.lastInsertRowid,
+                title,
+                estimated_minutes: estimatedMinutes,
+                priority,
+                deadline,
+                status: 'Not Started',
+                course_name: PERSONAL_COURSE_NAME,
+                material_name: null,
+                start_page: null,
+                end_page: null
+            }
+        });
+    } catch (error) {
+        console.error('Create custom task error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ==========================================
 // GET /api/tasks
 // List every real task for the logged-in user, joined with its section

@@ -93,9 +93,14 @@
           <h1 class="page-title">Tasks & Study Timer</h1>
           <p class="text-sm text-slate-500 font-medium">Select any prioritized study module to start an active focus timer session immediately.</p>
         </div>
-        <a href="materials.html" class="btn btn-secondary btn-sm whitespace-nowrap">
-          + Add from Material
-        </a>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="openAddTaskModal()" class="btn btn-primary btn-sm whitespace-nowrap">
+            + Add Task
+          </button>
+          <a href="materials.html" class="btn btn-secondary btn-sm whitespace-nowrap">
+            + Add from Material
+          </a>
+        </div>
       </div>
 
       <!-- MAIN CONTENT WORKSPACE -->
@@ -232,6 +237,54 @@
       </div>
       <div class="w-full lg:w-80 flex-shrink-0 max-h-[45vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 p-5 overflow-y-auto">
         <div id="fsTimerPanel"><!-- Populated via renderFullscreenTimerPanel() --></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD TASK MODAL: a standalone task the user types in themselves -
+       "call study group", "buy notebook" - with no PDF/material behind
+       it. Saved via POST /api/tasks, then folds into the same TODAY/
+       UPCOMING lists and the real generated schedule as any other task. -->
+  <div id="addTaskModal" class="hidden fixed inset-0 z-[100] bg-slate-900/40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold text-slate-900">Add a Task</h2>
+        <button type="button" onclick="closeAddTaskModal()" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-500 mb-4">For anything outside your uploaded materials - a worksheet, revision, or a personal to-do. It's added to your task list and included the next time you regenerate your schedule.</p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Task name</label>
+          <input type="text" id="newTaskTitle" placeholder="e.g. Finish worksheet 3" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Estimated minutes</label>
+            <input type="number" id="newTaskMinutes" min="5" step="5" value="30" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
+            <select id="newTaskPriority" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Deadline (optional)</label>
+          <input type="date" id="newTaskDeadline" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <p id="addTaskError" class="hidden text-xs text-red-600 font-medium"></p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 mt-5">
+        <button type="button" onclick="closeAddTaskModal()" class="btn btn-secondary btn-sm">Cancel</button>
+        <button type="button" id="addTaskSaveBtn" onclick="submitNewTask()" class="btn btn-primary btn-sm">Add Task</button>
       </div>
     </div>
   </div>
@@ -777,8 +830,73 @@
       }
     }
 
+    // ADD TASK MODAL - a standalone task typed in by the user, not tied
+    // to any uploaded material. Saved via POST /api/tasks, then reloaded
+    // into the same TODAY/UPCOMING lists as everything else.
+    function openAddTaskModal() {
+      document.getElementById('newTaskTitle').value = '';
+      document.getElementById('newTaskMinutes').value = 30;
+      document.getElementById('newTaskPriority').value = 'medium';
+      document.getElementById('newTaskDeadline').value = '';
+      document.getElementById('addTaskError').classList.add('hidden');
+      document.getElementById('addTaskModal').classList.remove('hidden');
+      document.getElementById('newTaskTitle').focus();
+    }
+
+    function closeAddTaskModal() {
+      document.getElementById('addTaskModal').classList.add('hidden');
+    }
+
+    async function submitNewTask() {
+      const errorEl = document.getElementById('addTaskError');
+      errorEl.classList.add('hidden');
+
+      const title = document.getElementById('newTaskTitle').value.trim();
+      const minutes = Number(document.getElementById('newTaskMinutes').value);
+      const priority = document.getElementById('newTaskPriority').value;
+      const deadline = document.getElementById('newTaskDeadline').value || null;
+
+      if (!title) {
+        errorEl.textContent = 'Please enter a task name.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        errorEl.textContent = 'Estimated minutes must be a positive number.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const saveBtn = document.getElementById('addTaskSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Adding...';
+
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, estimated_minutes: minutes, priority, deadline })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Could not add task.');
+        }
+
+        closeAddTaskModal();
+        await loadTasks();
+        renderTasks();
+      } catch (err) {
+        errorEl.textContent = err.message || 'Something went wrong adding the task.';
+        errorEl.classList.remove('hidden');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Add Task';
+      }
+    }
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && fullscreenTaskId != null) closeFullscreen();
+      if (e.key === 'Escape' && !document.getElementById('addTaskModal').classList.contains('hidden')) closeAddTaskModal();
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
