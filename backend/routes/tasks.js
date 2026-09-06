@@ -109,16 +109,15 @@ router.post('/', async (req, res) => {
 
 // A task longer than one study session gets split by the C++ scheduler
 // (cpp_engine/scheduler.cpp) into several session-length chunks, each its
-// own row in `schedules`, possibly on different days. This is exactly
-// what schedule.html shows (each chunk's own start_time/end_time) - but
-// this route used to only ever return the section's FULL estimated_minutes,
-// with no link back to any specific chunk. That's what made the Tasks
-// page's duration disagree with Schedule's: Schedule showed one chunk's
-// real (often shorter) length, Tasks always showed the task's total.
-// The three correlated subqueries below pull in that task's next
-// upcoming (or, if none upcoming, most recent) schedule chunk - date/
-// start/end - so the Tasks page can show and start a timer for the SAME
-// block Schedule shows, not the task's grand total.
+// own row in `schedules`, possibly on different days (e.g. one task
+// spread across tonight AND tomorrow night). This route used to collapse
+// every task down to a single row via correlated subqueries that only
+// ever picked ONE "next" schedule chunk - so a task with two scheduled
+// sessions silently only ever showed one of them here, even though
+// Schedule showed both. Now it returns one row per scheduled session (so
+// the Tasks & Timer page can render - and let the user start a timer
+// for - every session, not just one), plus exactly one row for a task
+// that has no scheduled session yet at all.
 router.get('/', async (req, res) => {
     try {
         const today = new Date().toISOString().slice(0, 10);
@@ -137,42 +136,70 @@ router.get('/', async (req, res) => {
                 s.material_id,
                 s.course_id,
                 c.name AS course_name,
-                m.filename AS material_name,
-                EXISTS(
-                    SELECT 1 FROM schedules sch WHERE sch.task_id = t.id AND sch.date = ?
-                ) AS scheduled_today,
-                (
-                    SELECT sch.date FROM schedules sch WHERE sch.task_id = t.id
-                    ORDER BY (sch.date >= ?) DESC, sch.date ASC, sch.start_time ASC LIMIT 1
-                ) AS session_date,
-                (
-                    SELECT sch.start_time FROM schedules sch WHERE sch.task_id = t.id
-                    ORDER BY (sch.date >= ?) DESC, sch.date ASC, sch.start_time ASC LIMIT 1
-                ) AS session_start_time,
-                (
-                    SELECT sch.end_time FROM schedules sch WHERE sch.task_id = t.id
-                    ORDER BY (sch.date >= ?) DESC, sch.date ASC, sch.start_time ASC LIMIT 1
-                ) AS session_end_time
+                m.filename AS material_name
             FROM tasks t
             JOIN sections s ON s.id = t.section_id
             JOIN courses c ON c.id = s.course_id
             LEFT JOIN materials m ON m.id = s.material_id
             WHERE c.user_id = ?
             ORDER BY t.priority DESC
-        `).all(today, today, today, today, req.user.id);
+        `).all(req.user.id);
 
-        const shaped = tasks.map((t) => {
-            const sessionMinutes = sessionDuration(t.session_start_time, t.session_end_time);
-            return {
-                ...t,
-                pages: (t.start_page != null && t.end_page != null) ? `Pages ${t.start_page}-${t.end_page}` : 'No pages',
-                time_group: t.scheduled_today ? 'TODAY' : 'UPCOMING',
-                // The specific chunk's own length, when this task has a
-                // scheduled session - falls back to null (full
-                // estimated_minutes) for a task never scheduled yet.
-                session_minutes: sessionMinutes
-            };
-        });
+        const taskIds = tasks.map((t) => t.id);
+        const schedulesByTask = new Map();
+        if (taskIds.length > 0) {
+            const placeholders = taskIds.map(() => '?').join(',');
+            const scheduleRows = await db.prepare(`
+                SELECT id, task_id, date, start_time, end_time, start_page, end_page
+                FROM schedules
+                WHERE task_id IN (${placeholders})
+                ORDER BY date ASC, start_time ASC
+            `).all(...taskIds);
+            for (const row of scheduleRows) {
+                if (!schedulesByTask.has(row.task_id)) schedulesByTask.set(row.task_id, []);
+                schedulesByTask.get(row.task_id).push(row);
+            }
+        }
+
+        const shaped = [];
+        for (const t of tasks) {
+            const sessions = schedulesByTask.get(t.id) || [];
+
+            if (sessions.length === 0) {
+                shaped.push({
+                    ...t,
+                    schedule_id: null,
+                    pages: (t.start_page != null && t.end_page != null) ? `Pages ${t.start_page}-${t.end_page}` : 'No pages',
+                    time_group: 'UPCOMING',
+                    session_date: null,
+                    session_start_time: null,
+                    session_end_time: null,
+                    session_minutes: null
+                });
+                continue;
+            }
+
+            for (const sch of sessions) {
+                // Prefer this specific chunk's own page range when the
+                // scheduler recorded one (a task split into parts covers a
+                // different sub-range per session); fall back to the
+                // section's full range for a single-session task or one
+                // with no pages at all (e.g. a custom task).
+                const startPage = sch.start_page != null ? sch.start_page : t.start_page;
+                const endPage = sch.end_page != null ? sch.end_page : t.end_page;
+
+                shaped.push({
+                    ...t,
+                    schedule_id: sch.id,
+                    pages: (startPage != null && endPage != null) ? `Pages ${startPage}-${endPage}` : 'No pages',
+                    time_group: sch.date === today ? 'TODAY' : 'UPCOMING',
+                    session_date: sch.date,
+                    session_start_time: sch.start_time,
+                    session_end_time: sch.end_time,
+                    session_minutes: sessionDuration(sch.start_time, sch.end_time)
+                });
+            }
+        }
 
         res.json({ success: true, tasks: shaped });
     } catch (error) {

@@ -80,7 +80,8 @@ router.get('/', async (req, res) => {
                     uploaded_at,
                     status,
                     page_count,
-                    file_size
+                    file_size,
+                    deadline
                 FROM materials
                 WHERE course_id = ?
                 ORDER BY id DESC
@@ -94,7 +95,8 @@ router.get('/', async (req, res) => {
                     m.uploaded_at,
                     m.status,
                     m.page_count,
-                    m.file_size
+                    m.file_size,
+                    m.deadline
                 FROM materials m
                 JOIN courses c ON c.id = m.course_id
                 WHERE c.user_id = ?
@@ -778,6 +780,83 @@ router.post('/:id/regenerate-tasks', async (req, res) => {
         });
     } catch (error) {
         console.error(`Regenerate tasks error for material ${req.params.id}:`, error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// PATCH /api/materials/:id/deadline
+// Sets (or clears) an optional deadline for the whole PDF - e.g. "this
+// chapter is due before the midterm". Purely informational for now (shown
+// on the material card); it doesn't feed the scheduler the way a task's
+// own deadline does, since a material's sections/tasks already carry
+// their own deadlines when the user sets those instead.
+// ==========================================
+router.patch('/:id/deadline', async (req, res) => {
+    try {
+        const materialId = Number(req.params.id);
+        const material = await materialOwnedByUser(materialId, req.user.id);
+
+        if (!material) {
+            return res.status(404).json({ success: false, error: 'Material not found' });
+        }
+
+        const rawDeadline = req.body.deadline;
+        let deadline = null;
+        if (rawDeadline != null && String(rawDeadline).trim() !== '') {
+            const candidate = String(rawDeadline).trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate) || Number.isNaN(new Date(candidate).getTime())) {
+                return res.status(400).json({ success: false, error: 'deadline must be a valid YYYY-MM-DD date, or empty to clear it' });
+            }
+            deadline = candidate;
+        }
+
+        await db.prepare(`UPDATE materials SET deadline = ? WHERE id = ?`).run(deadline, materialId);
+
+        res.json({ success: true, material_id: materialId, deadline });
+    } catch (error) {
+        console.error(`Update material deadline error for material ${req.params.id}:`, error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// PATCH /api/materials/sections/:sectionId/difficulty
+// The C++ scheduling engine already weighs a section's difficulty
+// heavily when prioritizing tasks (see computePriority() in
+// sectionTaskManager.cpp), but until now nothing ever set it to
+// anything but the hardcoded default of 1 - there was no way for the
+// user who actually knows how hard a chapter is to tell the system.
+// This lets them set it (1-5) per detected section; the caller is
+// expected to follow up with POST /:id/regenerate-tasks so the
+// section's existing task picks up the new priority immediately
+// instead of waiting for the next re-analyze.
+// ==========================================
+router.patch('/sections/:sectionId/difficulty', async (req, res) => {
+    try {
+        const sectionId = Number(req.params.sectionId);
+        const difficulty = Number(req.body.difficulty);
+
+        if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 5) {
+            return res.status(400).json({ success: false, error: 'difficulty must be an integer from 1 to 5' });
+        }
+
+        const section = await db.prepare(`
+            SELECT s.id, s.material_id
+            FROM sections s
+            JOIN courses c ON c.id = s.course_id
+            WHERE s.id = ? AND c.user_id = ?
+        `).get(sectionId, req.user.id);
+
+        if (!section) {
+            return res.status(404).json({ success: false, error: 'Section not found' });
+        }
+
+        await db.prepare(`UPDATE sections SET difficulty = ? WHERE id = ?`).run(difficulty, sectionId);
+
+        res.json({ success: true, section_id: sectionId, material_id: section.material_id, difficulty });
+    } catch (error) {
+        console.error(`Update section difficulty error for section ${req.params.sectionId}:`, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

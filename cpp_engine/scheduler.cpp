@@ -38,6 +38,15 @@ struct Task {
     int startPage = -1;
     int endPage = -1;
 
+    // Which PDF/material this task's section came from (empty string if
+    // none, e.g. a manually-added personal task). Two tasks from the SAME
+    // material must never be scheduled out of page order - a reader can't
+    // sensibly study pages 20-45 of a chapter before pages 1-19 of the
+    // same chapter, no matter how the priority/urgency/difficulty score
+    // comes out. materialId is what lets prioritizeTasks() recognize
+    // "these two belong to the same reading" and enforce that.
+    std::string materialId;
+
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
     int pageCount() const { return hasPages() ? (endPage - startPage + 1) : 0; }
 };
@@ -160,14 +169,31 @@ public:
     }
 
     // -------------------------------------------------------------
-    // 2. Sort tasks by priority, urgency (deadline), and difficulty
+    // 2. Sort tasks by priority, urgency (deadline), and difficulty -
+    //    UNLESS two tasks come from the same material, in which case
+    //    natural page order always wins (you can't sensibly schedule
+    //    pages 20-45 before pages 1-19 of the same reading, regardless
+    //    of which one scores higher on difficulty/urgency).
     // -------------------------------------------------------------
     std::vector<Task> prioritizeTasks(std::vector<Task> tasksToSort) const {
         std::sort(tasksToSort.begin(), tasksToSort.end(),
                   [this](const Task& a, const Task& b) {
+                      if (sameMaterial(a, b)) {
+                          return a.startPage < b.startPage; // earlier pages first, always
+                      }
                       return taskScore(a) > taskScore(b); // higher score = scheduled earlier
                   });
         return tasksToSort;
+    }
+
+    // Two tasks are "the same material" only when both carry a real,
+    // matching, non-empty materialId AND both have a real page range -
+    // otherwise (personal tasks, tasks with no material) fall back to
+    // ordinary score-based ordering.
+    bool sameMaterial(const Task& a, const Task& b) const {
+        return !a.materialId.empty() &&
+               a.materialId == b.materialId &&
+               a.hasPages() && b.hasPages();
     }
 
     // -------------------------------------------------------------
@@ -265,8 +291,10 @@ private:
 // Input (stdin, one record per line, pipe-delimited, prefixed by
 // record type so config/tasks/slots can arrive in any order):
 //   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
-//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage
+//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId
 //   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
+// materialId may be an empty field (i.e. two consecutive pipes) for a
+// task with no source material (e.g. a manually-added personal task).
 //
 // Output (stdout, one scheduled session per line, key=value - same
 // convention studyTracker.cpp/sectionTaskManager.cpp already use):
@@ -332,6 +360,9 @@ int main() {
                 task.difficulty = std::stoi(fields[6]);
                 task.startPage = std::stoi(fields[7]);
                 task.endPage = std::stoi(fields[8]);
+                // materialId is optional (field 9) for backward compatibility
+                // with older callers/sample data that don't send it yet.
+                task.materialId = (fields.size() >= 10) ? fields[9] : "";
                 tasks.push_back(task);
             } else if (fields[0] == "SLOT" && fields.size() >= 5) {
                 TimeSlot slot;

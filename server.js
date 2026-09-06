@@ -20,6 +20,7 @@ const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { db, client } = require('./backend/lib/db');
+const { TursoSessionStore } = require('./backend/lib/sessionStore');
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
 const courseRoutes = require('./backend/routes/courses');
@@ -29,7 +30,9 @@ const preferencesRoutes = require('./backend/routes/preferences');
 const scheduleRoutes = require('./backend/routes/schedule');
 const progressRoutes = require('./backend/routes/progress');
 const accountRoutes = require('./backend/routes/account');
+const notificationRoutes = require('./backend/routes/notifications');
 const { upsertGoogleUser } = require('./backend/lib/users');
+const { sendMail } = require('./backend/lib/mailer');
 console.log('MATERIAL ROUTES TYPE:', typeof materialRoutes);
 console.log('MATERIAL ROUTES:', materialRoutes);
 
@@ -72,12 +75,47 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added materials.file_data column.');
   }
 
+  if (!columnNames.includes('deadline')) {
+    await client.execute(`ALTER TABLE materials ADD COLUMN deadline TEXT`);
+    console.log('Migrated: added materials.deadline column.');
+  }
+
+  // Persistent session storage (backend/lib/sessionStore.js) - a database
+  // that predates this table just never had one; create it the same way
+  // schema.sql would on a fresh database.
+  const sessionsTable = await client.execute(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`
+  );
+  if (sessionsTable.rows.length === 0) {
+    await client.execute(`
+      CREATE TABLE sessions (
+          sid TEXT PRIMARY KEY,
+          sess TEXT NOT NULL,
+          expires INTEGER NOT NULL
+      )
+    `);
+    console.log('Migrated: created sessions table.');
+  }
+
   const prefCols = await client.execute(`PRAGMA table_info(user_preferences)`);
   const prefColumnNames = prefCols.rows.map((r) => r.name);
 
   if (!prefColumnNames.includes('day_schedule')) {
     await client.execute(`ALTER TABLE user_preferences ADD COLUMN day_schedule TEXT`);
     console.log('Migrated: added user_preferences.day_schedule column.');
+  }
+
+  if (!prefColumnNames.includes('email_notifications')) {
+    await client.execute(`ALTER TABLE user_preferences ADD COLUMN email_notifications INTEGER DEFAULT 0`);
+    console.log('Migrated: added user_preferences.email_notifications column.');
+  }
+
+  const scheduleCols = await client.execute(`PRAGMA table_info(schedules)`);
+  const scheduleColumnNames = scheduleCols.rows.map((r) => r.name);
+
+  if (!scheduleColumnNames.includes('reminder_sent')) {
+    await client.execute(`ALTER TABLE schedules ADD COLUMN reminder_sent INTEGER DEFAULT 0`);
+    console.log('Migrated: added schedules.reminder_sent column.');
   }
 
   // Backfill: materials uploaded before this change have their PDF bytes
@@ -127,10 +165,25 @@ app.use(
     secret: process.env.SESSION_SECRET || 'studygps_insecure_default_secret_change_me',
     resave: false,
     saveUninitialized: false,
+    // A logged-in user should stay logged in - like any normal website -
+    // until they explicitly log out or sign in from a different browser,
+    // not get silently booted back to the login page after 24 hours of
+    // real, active use. 400 days is the longest a cookie can actually
+    // live (browsers cap Set-Cookie's Max-Age/Expires there and silently
+    // clamp anything longer), and `rolling: true` re-issues that same
+    // 400-day window on every request, so someone who keeps using the
+    // app effectively never expires - only real inactivity for over a
+    // year would ever log them out on its own.
+    rolling: true,
+    // Persisted in Turso (see backend/lib/sessionStore.js) instead of the
+    // default in-memory store, so a session survives a server restart -
+    // otherwise the long cookie maxAge below wouldn't matter; the session
+    // would still vanish the moment the process restarted.
+    store: new TursoSessionStore(client),
     cookie: {
       secure: 'auto',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 400 * 24 * 60 * 60 * 1000 // 400 days (the practical browser max)
     }
   })
 );
@@ -208,6 +261,9 @@ app.use('/api/progress', progressRoutes);
 // Mount Account routes (clear study data, etc.)
 app.use('/api/account', accountRoutes);
 
+// Mount Notification routes (test email, SMTP-configured status)
+app.use('/api/notifications', notificationRoutes);
+
 // Serve static frontend assets
 app.use(express.static(frontendPath));
 
@@ -266,6 +322,84 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
+// ==========================================
+// Email reminders for upcoming scheduled study sessions
+// ==========================================
+// A lightweight polling job (no extra dependency for a real job
+// scheduler) that, every few minutes, looks for schedule sessions
+// starting soon for a user who's opted into email notifications
+// (user_preferences.email_notifications - see backend/routes/preferences.js
+// and Settings) and emails them a reminder exactly once each
+// (schedules.reminder_sent dedup flag - a session already reminded-about
+// is never emailed again even if this check runs again before it starts).
+// Sending itself goes through backend/lib/mailer.js, which no-ops with a
+// clear log line when SMTP isn't configured, so this is always safe to
+// run even before that's set up.
+const REMINDER_WINDOW_MINUTES = 15;
+const REMINDER_CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+
+function formatClock12(hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+async function checkAndSendScheduleReminders() {
+  try {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const windowEndMinutes = nowMinutes + REMINDER_WINDOW_MINUTES;
+
+    const rows = await db.prepare(`
+      SELECT
+          sch.id AS schedule_id, sch.start_time, sch.end_time,
+          s.title, c.name AS course_name,
+          u.email, u.name AS user_name
+      FROM schedules sch
+      JOIN tasks t ON t.id = sch.task_id
+      JOIN sections s ON s.id = t.section_id
+      JOIN courses c ON c.id = s.course_id
+      JOIN users u ON u.id = c.user_id
+      JOIN user_preferences up ON up.user_id = u.id
+      WHERE sch.date = ?
+        AND (sch.reminder_sent IS NULL OR sch.reminder_sent = 0)
+        AND up.email_notifications = 1
+        AND t.status != 'Completed'
+    `).all(today);
+
+    for (const row of rows) {
+      const [sh, sm] = String(row.start_time).split(':').map(Number);
+      const startMinutes = sh * 60 + sm;
+      // Not upcoming within the reminder window yet (or its window has
+      // already passed) - leave it for a later check, or let it quietly
+      // stop being retried once it's no longer "upcoming" at all.
+      if (startMinutes < nowMinutes || startMinutes > windowEndMinutes) continue;
+      if (!row.email) continue;
+
+      const result = await sendMail({
+        to: row.email,
+        subject: `StudyGPS reminder: "${row.title}" starts at ${formatClock12(row.start_time)}`,
+        text: `Hi ${row.user_name || 'there'},\n\nYour study session "${row.title}" (${row.course_name}) is scheduled from ${formatClock12(row.start_time)} to ${formatClock12(row.end_time)} today.\n\nGood luck!\n- StudyGPS`,
+        html: `<p>Hi ${row.user_name || 'there'},</p><p>Your study session <strong>${row.title}</strong> (${row.course_name}) is scheduled from ${formatClock12(row.start_time)} to ${formatClock12(row.end_time)} today.</p><p>Good luck!<br>- StudyGPS</p>`
+      });
+
+      if (result.sent) {
+        await db.prepare(`UPDATE schedules SET reminder_sent = 1 WHERE id = ?`).run(row.schedule_id);
+      }
+      // A failed send (SMTP not configured, transient network error, etc.)
+      // leaves reminder_sent at 0 so the next check retries it, up until
+      // the session's own window passes and the filter above stops
+      // matching it - no infinite retry, no crash either way.
+    }
+  } catch (err) {
+    // Never let a reminder-check failure take down the interval it runs
+    // on, or the server it's attached to.
+    console.error('Schedule reminder check failed:', err.message);
+  }
+}
+
 // The server only starts accepting requests once the database schema is
 // confirmed to exist - on a brand-new Turso database (first deploy, or a
 // fresh free-tier account) there's no `users` table yet until this runs,
@@ -275,6 +409,11 @@ async function start() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`StudyGPS server running on http://0.0.0.0:${PORT}`);
   });
+
+  // Runs once right after boot (catches anything due in the next few
+  // minutes even right after a restart) and then on a fixed interval.
+  checkAndSendScheduleReminders();
+  setInterval(checkAndSendScheduleReminders, REMINDER_CHECK_INTERVAL_MS);
 }
 
 start().catch((err) => {

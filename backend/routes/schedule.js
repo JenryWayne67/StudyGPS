@@ -205,7 +205,8 @@ async function getPendingTasks(userId) {
             s.start_page,
             s.end_page,
             s.estimated_minutes,
-            s.difficulty
+            s.difficulty,
+            s.material_id
         FROM tasks t
         JOIN sections s ON s.id = t.section_id
         JOIN courses c ON c.id = s.course_id
@@ -243,7 +244,12 @@ function runScheduler({ preferences, tasks, slots }) {
             daysUntil(task.deadline),
             task.difficulty || 1,
             task.start_page ?? -1,
-            task.end_page ?? -1
+            task.end_page ?? -1,
+            // Same-material tasks (same PDF) must stay in page order - see
+            // sameMaterial()/prioritizeTasks() in scheduler.cpp. Empty
+            // string (not 0/null) so a task with no material never
+            // "matches" another one that also has no material.
+            task.material_id != null ? task.material_id : ''
         ].join('|'));
     }
 

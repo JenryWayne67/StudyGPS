@@ -27,7 +27,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <cctype>
 
 // ---------------------------------------------------------------------
 // Input data structure - mirrors one row coming from the `sections` table

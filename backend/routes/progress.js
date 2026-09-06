@@ -48,6 +48,29 @@ async function getTasksForReport(userId) {
     `).all(userId);
 }
 
+// Every course this user has, regardless of whether it has any tasks yet.
+// calculateCourseProgress() in progressReport.cpp only ever sees courses
+// that show up in the TASK lines it's fed - a course with materials
+// uploaded but not yet analyzed (so it has zero sections/tasks), or one
+// with no materials at all, never appears in that list at all. That's
+// what made the Progress page look like it only tracked one course
+// (usually whichever one the user analyzed first) - the others weren't
+// hidden by a display bug, they were simply never in the data. Fetching
+// the real course list here and merging it in (see mergeAllCourses)
+// below is enumeration/defaulting, not progress math, so it doesn't
+// belong inside the C++ engine.
+async function getAllCourses(userId) {
+    return db.prepare(`SELECT id, name FROM courses WHERE user_id = ? ORDER BY id ASC`).all(userId);
+}
+
+// Guarantees every one of the user's real courses appears in the
+// response, even ones progressReport.exe never saw a task for - those
+// get an honest 0/0 (0%) entry instead of being silently absent.
+function mergeAllCourses(allCourses, courseProgress) {
+    const byName = new Map(courseProgress.map((c) => [c.name, c]));
+    return allCourses.map((c) => byName.get(c.name) || { total: 0, completed: 0, percentage: 0, name: c.name });
+}
+
 // Run cpp_engine/progressReport.exe: pipe TASK lines in (pipe-delimited,
 // one per line), get a REPORT line plus one COURSE line per course out
 // (key=value, same CLI contract the other engines use). Throws on any
@@ -128,6 +151,7 @@ function runProgressReport(taskRows) {
 router.get('/', async (req, res) => {
     try {
         const taskRows = await getTasksForReport(req.user.id);
+        const allCourses = await getAllCourses(req.user.id);
 
         if (taskRows.length === 0) {
             return res.json({
@@ -139,12 +163,12 @@ router.get('/', async (req, res) => {
                     study_minutes: 0,
                     schedule_adherence: 0
                 },
-                courses: []
+                courses: allCourses.map((c) => ({ total: 0, completed: 0, percentage: 0, name: c.name }))
             });
         }
 
         const { report, courses } = runProgressReport(taskRows);
-        res.json({ success: true, report, courses });
+        res.json({ success: true, report, courses: mergeAllCourses(allCourses, courses) });
     } catch (error) {
         console.error('Get progress error:', error);
         res.status(500).json({ success: false, error: error.message });

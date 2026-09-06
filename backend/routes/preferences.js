@@ -27,7 +27,8 @@ const DEFAULTS = {
     session_length: 50,
     break_length: 10,
     max_daily_minutes: 120,
-    dark_mode: 0
+    dark_mode: 0,
+    email_notifications: 0
 };
 
 function parseDaySchedule(raw) {
@@ -51,7 +52,8 @@ function shapeRow(row) {
         session_length: merged.session_length || DEFAULTS.session_length,
         break_length: merged.break_length ?? DEFAULTS.break_length,
         max_daily_minutes: merged.max_daily_minutes || DEFAULTS.max_daily_minutes,
-        dark_mode: !!merged.dark_mode
+        dark_mode: !!merged.dark_mode,
+        email_notifications: !!merged.email_notifications
     };
 }
 
@@ -63,7 +65,7 @@ function shapeRow(row) {
 router.get('/', async (req, res) => {
     try {
         const row = await db.prepare(`
-            SELECT study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode
+            SELECT study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode, email_notifications
             FROM user_preferences WHERE user_id = ?
         `).get(req.user.id);
 
@@ -89,7 +91,7 @@ router.put('/', async (req, res) => {
         const userId = req.user.id;
 
         const existing = await db.prepare(`
-            SELECT study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode
+            SELECT study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode, email_notifications
             FROM user_preferences WHERE user_id = ?
         `).get(userId);
 
@@ -104,7 +106,8 @@ router.put('/', async (req, res) => {
             session_length: body.session_length != null ? Number(body.session_length) : current.session_length,
             break_length: body.break_length != null ? Number(body.break_length) : current.break_length,
             max_daily_minutes: body.max_daily_minutes != null ? Number(body.max_daily_minutes) : current.max_daily_minutes,
-            dark_mode: body.dark_mode != null ? (body.dark_mode ? 1 : 0) : (current.dark_mode ? 1 : 0)
+            dark_mode: body.dark_mode != null ? (body.dark_mode ? 1 : 0) : (current.dark_mode ? 1 : 0),
+            email_notifications: body.email_notifications != null ? (body.email_notifications ? 1 : 0) : (current.email_notifications ? 1 : 0)
         };
 
         const daySchedJson = JSON.stringify(next.day_schedule || {});
@@ -113,21 +116,21 @@ router.put('/', async (req, res) => {
             await db.prepare(`
                 UPDATE user_preferences
                 SET study_days = ?, preferred_start = ?, preferred_end = ?, day_schedule = ?,
-                    session_length = ?, break_length = ?, max_daily_minutes = ?, dark_mode = ?
+                    session_length = ?, break_length = ?, max_daily_minutes = ?, dark_mode = ?, email_notifications = ?
                 WHERE user_id = ?
             `).run(
                 next.study_days, next.preferred_start, next.preferred_end, daySchedJson,
-                next.session_length, next.break_length, next.max_daily_minutes, next.dark_mode,
+                next.session_length, next.break_length, next.max_daily_minutes, next.dark_mode, next.email_notifications,
                 userId
             );
         } else {
             await db.prepare(`
                 INSERT INTO user_preferences
-                    (user_id, study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes, dark_mode, email_notifications)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
                 userId, next.study_days, next.preferred_start, next.preferred_end, daySchedJson,
-                next.session_length, next.break_length, next.max_daily_minutes, next.dark_mode
+                next.session_length, next.break_length, next.max_daily_minutes, next.dark_mode, next.email_notifications
             );
         }
 

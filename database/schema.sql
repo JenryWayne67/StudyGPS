@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS sections;
 DROP TABLE IF EXISTS materials;
 DROP TABLE IF EXISTS courses;
 DROP TABLE IF EXISTS user_preferences;
+DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS users;
 
 -- USERS
@@ -20,6 +21,17 @@ CREATE TABLE users (
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT
+);
+
+-- LOGIN SESSIONS (backend/lib/sessionStore.js) - persisted here instead of
+-- express-session's default in-memory store, so a logged-in user stays
+-- logged in across server restarts/redeploys, not just within one
+-- process's uptime. `sess` is the session JSON blob; `expires` is a Unix
+-- ms timestamp mirroring the cookie's own expiry.
+CREATE TABLE sessions (
+    sid TEXT PRIMARY KEY,
+    sess TEXT NOT NULL,
+    expires INTEGER NOT NULL
 );
 
 -- USER STUDY PREFERENCES
@@ -34,6 +46,7 @@ CREATE TABLE user_preferences (
     break_length INTEGER DEFAULT 10,
     max_daily_minutes INTEGER DEFAULT 120,
     dark_mode INTEGER DEFAULT 0,
+    email_notifications INTEGER DEFAULT 0, -- opt-in reminder emails for upcoming study sessions
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -56,6 +69,7 @@ CREATE TABLE materials (
     page_count INTEGER,
     file_size TEXT,
     extracted_text TEXT,
+    deadline TEXT, -- optional "YYYY-MM-DD" the whole material is due by
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
 
@@ -104,6 +118,7 @@ CREATE TABLE schedules (
     end_time TEXT NOT NULL,
     start_page INTEGER,
     end_page INTEGER,
+    reminder_sent INTEGER DEFAULT 0, -- dedup flag for the email-reminder background check in server.js
     FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 

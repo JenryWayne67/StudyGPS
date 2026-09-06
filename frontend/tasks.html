@@ -233,11 +233,11 @@
            scrolls internally past that) - otherwise the timer's controls
            push the PDF down into an unusably short strip. From lg: up
            they sit side by side and neither cap applies. -->
-      <div class="flex-1 min-h-[50vh] lg:min-h-0 bg-slate-100">
+      <div id="fsPdfPane" class="flex-1 min-h-[50vh] lg:min-h-0 bg-slate-100">
         <iframe id="fsPdfFrame" src="about:blank" class="w-full h-full border-0" title="Study material"></iframe>
       </div>
-      <div class="w-full lg:w-80 flex-shrink-0 max-h-[45vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 p-5 overflow-y-auto">
-        <div id="fsTimerPanel"><!-- Populated via renderFullscreenTimerPanel() --></div>
+      <div id="fsTimerPane" class="w-full lg:w-80 flex-shrink-0 max-h-[45vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 p-5 overflow-y-auto">
+        <div id="fsTimerPanel" class="max-w-sm mx-auto"><!-- Populated via renderFullscreenTimerPanel() --></div>
       </div>
     </div>
   </div>
@@ -293,6 +293,15 @@
   <script>
     // State management
     let activeTaskId = null;
+    // A task can now appear as more than one CARD (one per scheduled
+    // session - see occKey()/loadTasks() below), so "is THIS card's timer
+    // the active one" can't be decided from activeTaskId alone anymore,
+    // or both cards for the same task would render a duplicate inline
+    // timer panel with clashing element ids. activeOccurrenceKey tracks
+    // exactly which card started the timer; activeTaskId is still what
+    // the actual API calls (POST /study-sessions, etc.) use, since a
+    // study session is logged against the task, not a specific card.
+    let activeOccurrenceKey = null;
     let plannedMinutes = 50;
     let totalSeconds = 50 * 60;
     let remainingSeconds = 50 * 60;
@@ -324,17 +333,40 @@
     // one with an active timer.
     let fullscreenTaskId = null;
 
+    // Full screen study view - available for EVERY task now, not only
+    // ones with an attached PDF. A material-backed task still gets the
+    // side-by-side PDF + timer layout; a task with nothing to display
+    // (a custom task added directly on this page) gets a focused,
+    // distraction-free full screen timer instead of being denied full
+    // screen entirely.
     function openFullscreen(taskId) {
       const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
-      if (!task || !task.material_id) return;
+      if (!task) return;
 
       fullscreenTaskId = Number(taskId);
 
       document.getElementById('fsTitle').textContent = task.title;
       document.getElementById('fsSubtitle').textContent =
         task.course_name + (task.material_name ? ` · ${task.material_name}` : '');
-      document.getElementById('fsPdfFrame').src =
-        `/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}`;
+
+      const pdfPane = document.getElementById('fsPdfPane');
+      const timerPane = document.getElementById('fsTimerPane');
+
+      if (task.material_id) {
+        document.getElementById('fsPdfFrame').src =
+          `/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}`;
+        pdfPane.classList.remove('hidden');
+        timerPane.classList.remove('w-full', 'lg:max-w-none');
+        timerPane.classList.add('w-full', 'lg:w-80');
+      } else {
+        // No material to show - hide the PDF pane and let the timer
+        // pane take the whole screen instead of leaving a big empty
+        // gray rectangle next to it.
+        document.getElementById('fsPdfFrame').src = 'about:blank';
+        pdfPane.classList.add('hidden');
+        timerPane.classList.remove('lg:w-80');
+        timerPane.classList.add('w-full', 'lg:max-w-none');
+      }
 
       renderFullscreenTimerPanel();
 
@@ -372,10 +404,11 @@
       }
 
       if (!isCurrentActive) {
+        const overrideMinutes = task && task.session_minutes != null ? task.session_minutes : 'null';
         panel.innerHTML = `
           <div class="text-center py-10 space-y-3">
             <p class="text-xs text-slate-500">Ready when you are.</p>
-            <button type="button" onclick="startTaskTimer(${fullscreenTaskId})" class="btn btn-primary shadow-sm flex items-center gap-2 mx-auto">
+            <button type="button" onclick="startTaskTimer(${fullscreenTaskId}, true, ${overrideMinutes})" class="btn btn-primary shadow-sm flex items-center gap-2 mx-auto">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               Start Studying
             </button>
@@ -432,6 +465,14 @@
     // filters change / the timer runs.
     let allTasksCache = [];
     let coursesCache = [];
+
+    // Unique key for one CARD - a task with two scheduled sessions now
+    // produces two entries in allTasksCache (see GET /api/tasks), each
+    // carrying its own schedule_id. A task with no scheduled session yet
+    // has schedule_id == null and gets exactly one, task-id-keyed card.
+    function occKey(task) {
+      return task.schedule_id != null ? `sch-${task.schedule_id}` : `task-${task.id}`;
+    }
 
     function getQueryParam(name) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -495,8 +536,15 @@
     // scheduled session at all (never added to the Schedule) falls back
     // to the section's full estimated_minutes - there's no chunk to match
     // yet in that case.
-    function startTaskTimer(taskId, autoStart = true, overrideMinutes = null) {
+    // occurrenceKey identifies exactly which CARD was clicked, so that when
+    // a task has more than one scheduled session, starting one card's timer
+    // doesn't also light up its sibling card's inline panel (they'd share
+    // DOM element ids and only the first would ever visually update).
+    // Defaults to a task-level key for callers (full screen, links with no
+    // specific card) that aren't tied to one particular session.
+    function startTaskTimer(taskId, autoStart = true, overrideMinutes = null, occurrenceKey = null) {
       activeTaskId = Number(taskId);
+      activeOccurrenceKey = occurrenceKey || `task-${activeTaskId}`;
       const task = allTasksCache.find(t => Number(t.id) === activeTaskId);
       if (!task) return;
 
@@ -513,7 +561,7 @@
       updateTimerDisplay();
       renderFullscreenTimerPanel(); // no-op if full screen isn't open
 
-      const card = document.getElementById(`task-card-${activeTaskId}`);
+      const card = document.getElementById(`task-card-${activeOccurrenceKey}`);
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -522,6 +570,7 @@
       isRunning = false;
       isTimerActive = false;
       activeTaskId = null;
+      activeOccurrenceKey = null;
       renderTasks();
       renderFullscreenTimerPanel(); // switches back to the Start CTA if open
     }
@@ -686,7 +735,8 @@
 
       const createCard = (task) => {
         const isDone = task.status === 'Completed';
-        const isCurrentActive = isTimerActive && Number(task.id) === Number(activeTaskId);
+        const cardKey = occKey(task);
+        const isCurrentActive = isTimerActive && cardKey === activeOccurrenceKey;
 
         const m = Math.floor(remainingSeconds / 60);
         const s = remainingSeconds % 60;
@@ -694,7 +744,7 @@
         const percent = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - remainingSeconds) / totalSeconds) * 100)) : 0;
 
         return `
-          <div id="task-card-${task.id}" class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (isDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
+          <div id="task-card-${cardKey}" data-task-id="${task.id}" class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (isDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
             
             <!-- TOP BAR: TASK METADATA & ACTIONS -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -721,11 +771,11 @@
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path><path d="M6 6h10"></path><path d="M6 10h10"></path></svg>
                     ${openPdfTaskIds.has(task.id) ? 'Hide PDF' : 'View PDF'}
                   </button>
-                  <button type="button" onclick="openFullscreen(${task.id})" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
-                    Full Screen
-                  </button>
                 ` : ''}
+                <button type="button" onclick="openFullscreen(${task.id})" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+                  Full Screen
+                </button>
                 ${isDone ? `
                   <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
                     ✓ Completed
@@ -735,7 +785,7 @@
                     ✕ Dismiss Timer
                   </button>
                 ` : `
-                  <button type="button" onclick="startTaskTimer(${task.id})" class="btn btn-primary btn-sm whitespace-nowrap shadow-sm flex items-center gap-1.5 hover:bg-blue-700 transition">
+                  <button type="button" onclick="startTaskTimer(${task.id}, true, ${task.session_minutes != null ? task.session_minutes : 'null'}, '${cardKey}')" class="btn btn-primary btn-sm whitespace-nowrap shadow-sm flex items-center gap-1.5 hover:bg-blue-700 transition">
                     <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                     Start Studying
                   </button>
@@ -921,7 +971,13 @@
       const paramTaskId = getQueryParam('task_id');
       if (paramTaskId) {
         const paramMinutes = Number(getQueryParam('minutes'));
-        startTaskTimer(paramTaskId, false, Number.isFinite(paramMinutes) && paramMinutes > 0 ? paramMinutes : null);
+        // A task with more than one scheduled session now has more than
+        // one card - land on its first (soonest) occurrence so the timer
+        // panel actually appears under a real card instead of matching
+        // none of them.
+        const matchingTask = allTasksCache.find(t => Number(t.id) === Number(paramTaskId));
+        const landingKey = matchingTask ? occKey(matchingTask) : null;
+        startTaskTimer(paramTaskId, false, Number.isFinite(paramMinutes) && paramMinutes > 0 ? paramMinutes : null, landingKey);
       }
     });
   </script>

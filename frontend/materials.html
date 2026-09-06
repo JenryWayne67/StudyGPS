@@ -454,7 +454,7 @@
             : '';
           const pageLabel = mat.page_count ? `${mat.page_count} pages` : 'not yet processed';
           return `
-            <div class="p-4 flex items-center justify-between gap-4">
+            <div class="p-4 flex items-center justify-between gap-4 flex-wrap">
               <div class="flex items-center gap-3">
                 <span class="text-xl">📄</span>
                 <div>
@@ -462,9 +462,20 @@
                   <p class="text-[11px] text-slate-400 font-medium">${sizeLabel}${sizeLabel ? ' • ' : ''}${pageLabel} • ${mat.status}</p>
                 </div>
               </div>
-              <button onclick="triggerAnalyze(${mat.id})" id="analyzeBtn-${mat.id}" class="btn btn-secondary btn-sm">
-                ${mat.status === 'processed' ? 'Re-analyze' : 'Analyze'}
-              </button>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500" title="Optional - when this whole PDF should be done by">
+                  Deadline
+                  <input
+                    type="date"
+                    value="${mat.deadline || ''}"
+                    onchange="updateMaterialDeadline(${mat.id}, this.value)"
+                    class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                </label>
+                <button onclick="triggerAnalyze(${mat.id})" id="analyzeBtn-${mat.id}" class="btn btn-secondary btn-sm">
+                  ${mat.status === 'processed' ? 'Re-analyze' : 'Analyze'}
+                </button>
+              </div>
             </div>
           `;
         }).join('');
@@ -497,13 +508,77 @@
         <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
           <div class="flex items-center justify-between">
             <h5 class="text-xs font-bold text-slate-800">${sec.title}</h5>
-            <span class="text-[10px] font-bold ${sec.difficulty >= 2 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'} px-2 py-0.5 rounded">Diff ${sec.difficulty}</span>
+            <label class="flex items-center gap-1 text-[10px] font-bold text-slate-600" title="How hard this section is - used to prioritize it in your schedule">
+              Diff
+              <select
+                class="difficulty-select text-[10px] font-bold border border-slate-300 rounded px-1 py-0.5 bg-white ${sec.difficulty >= 2 ? 'text-amber-800' : 'text-slate-700'}"
+                data-section-id="${sec.id}"
+                onchange="updateSectionDifficulty(${sec.id}, this)"
+              >
+                ${[1, 2, 3, 4, 5].map(n => `<option value="${n}" ${Number(sec.difficulty) === n ? 'selected' : ''}>${n}</option>`).join('')}
+              </select>
+            </label>
           </div>
           <p class="text-[11px] text-slate-500 font-medium">Pages ${sec.start_page}–${sec.end_page} • ${sec.estimated_minutes} min</p>
         </div>
       `).join('');
 
       document.getElementById('analysisPanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Optional deadline for a whole PDF (e.g. "due before the midterm").
+    // An empty value clears it - the input's own onchange fires either way.
+    async function updateMaterialDeadline(materialId, value) {
+      try {
+        const res = await fetch(`/api/materials/${materialId}/deadline`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deadline: value || null })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to update deadline');
+
+        const mat = currentCourseMaterials.find(m => m.id === materialId);
+        if (mat) mat.deadline = data.deadline;
+      } catch (error) {
+        console.error('Failed to update material deadline:', error);
+        alert(`Couldn't update deadline: ${error.message}`);
+      }
+    }
+
+    // Lets the user tell StudyGPS how hard a section actually is (1-5).
+    // The C++ scheduler weighs difficulty heavily when deciding what to
+    // study first, but it previously had no real signal to work with -
+    // every auto-detected section was hardcoded to difficulty 1. Saving
+    // the new value alone isn't enough - the section's task already has
+    // a priority baked in from whenever it was generated, so we also
+    // trigger a task regeneration for this material so the change takes
+    // effect immediately instead of silently doing nothing until the
+    // next re-analyze.
+    async function updateSectionDifficulty(sectionId, selectEl) {
+      const difficulty = Number(selectEl.value);
+      selectEl.disabled = true;
+      try {
+        const patchRes = await fetch(`/api/materials/sections/${sectionId}/difficulty`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ difficulty })
+        });
+        const patchData = await patchRes.json();
+        if (!patchData.success) throw new Error(patchData.error || 'Failed to update difficulty');
+
+        selectEl.classList.toggle('text-amber-800', difficulty >= 2);
+        selectEl.classList.toggle('text-slate-700', difficulty < 2);
+
+        if (currentSelectedMaterialId) {
+          await fetch(`/api/materials/${currentSelectedMaterialId}/regenerate-tasks`, { method: 'POST' });
+        }
+      } catch (error) {
+        console.error('Failed to update section difficulty:', error);
+        alert(`Couldn't update difficulty: ${error.message}`);
+      } finally {
+        selectEl.disabled = false;
+      }
     }
 
     // Runs the real PDF -> pages -> sections -> C++ task engine pipeline
