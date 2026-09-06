@@ -29,6 +29,7 @@ CREATE TABLE user_preferences (
     study_days TEXT,
     preferred_start TEXT,
     preferred_end TEXT,
+    day_schedule TEXT, -- JSON: {"Monday":{"start":"18:00","end":"21:00"}, ...} per-day override
     session_length INTEGER DEFAULT 50,
     break_length INTEGER DEFAULT 10,
     max_daily_minutes INTEGER DEFAULT 120,
@@ -45,21 +46,11 @@ CREATE TABLE courses (
 );
 
 -- MATERIALS (PDFs / Books)
--- file_data holds the uploaded PDF's actual bytes (BLOB), not a path to a
--- file on disk - see backend/routes/materials.js. Storing the file in the
--- same database as everything else means it persists exactly as reliably
--- as the rest of a user's data, with no separate object-storage service
--- to set up, and survives a host with an ephemeral/wiped local disk.
--- file_path is kept only as a legacy column: any material uploaded before
--- this change has its bytes on disk at that path, not in file_data yet -
--- server.js's ensureSchema() backfills file_data from it on first boot
--- after the upgrade. New uploads never set file_path.
 CREATE TABLE materials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     course_id INTEGER NOT NULL,
     filename TEXT NOT NULL,
     file_path TEXT,
-    file_data BLOB,
     uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'pending',
     page_count INTEGER,

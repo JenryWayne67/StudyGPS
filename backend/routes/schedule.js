@@ -22,6 +22,7 @@ const DEFAULT_PREFERENCES = {
     study_days: 'Monday,Tuesday,Wednesday,Thursday,Friday',
     preferred_start: '18:00',
     preferred_end: '21:00',
+    day_schedule: {},
     session_length: 50,
     break_length: 10,
     max_daily_minutes: 120
@@ -29,9 +30,19 @@ const DEFAULT_PREFERENCES = {
 
 const DAYS_TO_PLAN = 14; // how far ahead to open up study slots
 
+function parseDaySchedule(raw) {
+    if (!raw) return {};
+    try {
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (err) {
+        return {};
+    }
+}
+
 async function getPreferences(userId) {
     const row = await db.prepare(`
-        SELECT study_days, preferred_start, preferred_end, session_length, break_length, max_daily_minutes
+        SELECT study_days, preferred_start, preferred_end, day_schedule, session_length, break_length, max_daily_minutes
         FROM user_preferences
         WHERE user_id = ?
     `).get(userId);
@@ -42,10 +53,23 @@ async function getPreferences(userId) {
         study_days: row.study_days || DEFAULT_PREFERENCES.study_days,
         preferred_start: row.preferred_start || DEFAULT_PREFERENCES.preferred_start,
         preferred_end: row.preferred_end || DEFAULT_PREFERENCES.preferred_end,
+        day_schedule: parseDaySchedule(row.day_schedule),
         session_length: row.session_length || DEFAULT_PREFERENCES.session_length,
         break_length: row.break_length ?? DEFAULT_PREFERENCES.break_length,
         max_daily_minutes: row.max_daily_minutes || DEFAULT_PREFERENCES.max_daily_minutes
     };
+}
+
+// This day's actual study window: its own entry in day_schedule if the
+// user set one (e.g. Saturday -> 2:30pm-10:00pm), otherwise the account-wide
+// preferred_start/preferred_end fallback. This is the fix for schedules
+// that ignored per-day hours and used one flat window for every day.
+function getDayWindow(preferences, dayLabel) {
+    const override = preferences.day_schedule && preferences.day_schedule[dayLabel];
+    if (override && override.start && override.end) {
+        return { start: override.start, end: override.end };
+    }
+    return { start: preferences.preferred_start, end: preferences.preferred_end };
 }
 
 // "HH:MM" -> minutes since midnight
@@ -86,9 +110,6 @@ function buildSlotsAndDateMap(preferences) {
             .filter(Boolean)
     );
 
-    const startMinutes = timeToMinutes(preferences.preferred_start);
-    const endMinutes = timeToMinutes(preferences.preferred_end);
-
     const slots = [];
     const dateByDayIndex = new Map();
 
@@ -103,7 +124,18 @@ function buildSlotsAndDateMap(preferences) {
         dateByDayIndex.set(dayIndex, formatDate(date));
 
         if (studyDays.size === 0 || studyDays.has(dayLabel)) {
-            slots.push({ dayLabel, dayIndex, startMinutes, endMinutes });
+            // Each day gets ITS OWN start/end - e.g. Saturday/Sunday can run
+            // 2:30pm-10:00pm while weekdays run 6:30pm-10:00pm. Previously
+            // every day used the same account-wide preferred_start/end,
+            // which is why per-day hours set during onboarding never took
+            // effect.
+            const window = getDayWindow(preferences, dayLabel);
+            slots.push({
+                dayLabel,
+                dayIndex,
+                startMinutes: timeToMinutes(window.start),
+                endMinutes: timeToMinutes(window.end)
+            });
         }
     }
 

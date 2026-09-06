@@ -227,22 +227,24 @@
 
       // Pre-fill preferences if this user somehow already has a row (e.g.
       // they came back via "Skip to Dashboard" earlier, or are revisiting
-      // this page to change their schedule). The backend only stores one
-      // shared start/end time and a set of active days (no true per-day
-      // times), so build the day-by-day UI shape from that flat data:
-      // every active day gets the same start/end, inactive days are off.
+      // this page to change their schedule). day_schedule holds each day's
+      // own start/end when they were set individually (e.g. weekends
+      // different from weekdays) - preferred_start/end is only the
+      // fallback for a day with no override of its own.
       try {
         const prefRes = await fetch('/api/preferences');
         if (prefRes.ok) {
           const prefData = await prefRes.json();
           const activeDays = String(prefData.study_days || '')
             .split(',').map((d) => d.trim()).filter(Boolean);
+          const perDay = prefData.day_schedule || {};
           const daySchedules = {};
           DAYS.forEach((day) => {
+            const override = perDay[day];
             daySchedules[day] = {
               enabled: activeDays.includes(day),
-              start: prefData.preferred_start || '18:00',
-              end: prefData.preferred_end || '21:00'
+              start: override?.start || prefData.preferred_start || '18:00',
+              end: override?.end || prefData.preferred_end || '21:00'
             };
           });
           currentPrefs = {
@@ -552,13 +554,25 @@
         });
         if (!nameRes.ok) throw new Error((await nameRes.json()).error || 'Could not save your name.');
 
+        // day_schedule carries each day's OWN start/end (e.g. Sat/Sun can
+        // run 2:30pm-10:00pm while weekdays run 6:30pm-10:00pm) - this is
+        // what the scheduler actually uses per day now. preferred_start/end
+        // is kept only as a fallback for any day with no entry of its own,
+        // so it's fine for it to just mirror the first active day's time.
+        const dayScheduleForSave = {};
+        DAYS.forEach((day) => {
+          dayScheduleForSave[day] = { start: daySchedules[day].start, end: daySchedules[day].end };
+        });
+        const firstActiveDay = activeDays[0] || 'Monday';
+
         const prefRes = await fetch('/api/preferences', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             study_days: activeDays,
-            preferred_start: daySchedules['Monday']?.start || '18:00',
-            preferred_end: daySchedules['Monday']?.end || '21:00',
+            day_schedule: dayScheduleForSave,
+            preferred_start: daySchedules[firstActiveDay]?.start || '18:00',
+            preferred_end: daySchedules[firstActiveDay]?.end || '21:00',
             session_length: Number(sessionLen),
             break_length: Number(breakLen),
             max_daily_minutes: Number(maxDaily)

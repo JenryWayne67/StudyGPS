@@ -72,6 +72,14 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added materials.file_data column.');
   }
 
+  const prefCols = await client.execute(`PRAGMA table_info(user_preferences)`);
+  const prefColumnNames = prefCols.rows.map((r) => r.name);
+
+  if (!prefColumnNames.includes('day_schedule')) {
+    await client.execute(`ALTER TABLE user_preferences ADD COLUMN day_schedule TEXT`);
+    console.log('Migrated: added user_preferences.day_schedule column.');
+  }
+
   // Backfill: materials uploaded before this change have their PDF bytes
   // on disk at the old file_path, not in the database yet. Read each one
   // in now so existing uploads (re-analyze, etc.) keep working without
