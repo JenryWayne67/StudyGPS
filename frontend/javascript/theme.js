@@ -72,8 +72,8 @@
            never matches them, so without these they stayed near-white in
            dark mode. That's what made schedule.html's "Rest Day" and
            "Nothing scheduled yet" boxes render as bright panels with
-           light text on them, i.e. effectively unreadable. The `/` has to
-           be escaped in a CSS selector. */
+           light text on them, i.e. effectively unreadable. The slash has
+           to be escaped in a CSS selector. */
         [data-theme="dark"] .bg-white\\/70 { background-color: rgba(30, 41, 59, 0.7) !important; }
         [data-theme="dark"] .bg-white\\/60 { background-color: rgba(30, 41, 59, 0.6) !important; }
         [data-theme="dark"] .bg-slate-50\\/50 { background-color: rgba(15, 23, 42, 0.5) !important; }
