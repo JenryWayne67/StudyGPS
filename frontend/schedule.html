@@ -143,12 +143,9 @@
 
       <!-- Quick Session Legend & Preferences Note -->
       <div class="mt-6 flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-slate-200 text-xs text-slate-600">
-        <div class="flex items-center gap-4 flex-wrap">
+        <div class="flex items-center gap-4 flex-wrap" id="courseColorLegend">
           <span class="font-bold text-slate-700">Course Colors:</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Discrete Math</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> C++ Programming</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Networking</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Review</span>
+          <!-- Dynamically populated from the actual courses in the schedule -->
         </div>
         <a href="tasks.html" class="font-bold text-blue-600 hover:underline flex items-center gap-1">
           Open Focus Timer Workbench &rarr;
@@ -301,6 +298,73 @@
     let scheduleCache = [];
     let preferencesCache = null;
     const DAYS_ALL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    // Course colors used to be 4 names hardcoded into the page (Discrete
+    // Math, C++ Programming, Networking, Review) with fixed colors - so
+    // the legend never matched whatever courses a real user actually had,
+    // and session cards weren't color-coded at all. Colors are assigned
+    // here instead, on the fly, from whichever courses are actually in
+    // scheduleCache. Plain hex values (not Tailwind utility classes) are
+    // used deliberately - tailwind.css is a purged build containing only
+    // the classes literally written in the frontend source, so a class
+    // like "bg-pink-500" invented at runtime would render as nothing.
+    const COURSE_COLOR_PALETTE = [
+      '#3b82f6', // blue
+      '#10b981', // emerald
+      '#f59e0b', // amber
+      '#6366f1', // indigo
+      '#ec4899', // pink
+      '#06b6d4', // cyan
+      '#f97316', // orange
+      '#8b5cf6', // violet
+      '#ef4444', // red
+      '#14b8a6'  // teal
+    ];
+    const COURSE_COLOR_FALLBACK = '#94a3b8'; // slate-400, for a session with no course
+    let courseColorMap = {}; // courseKey -> hex color
+
+    function courseKey(s) {
+      return s.course_id != null ? `id:${s.course_id}` : `name:${s.course_name || 'Unknown Course'}`;
+    }
+
+    // Assigns each distinct course a color, in alphabetical order by name
+    // so the same course lands on the same color every time this runs,
+    // rather than shifting around based on schedule order.
+    function buildCourseColorMap() {
+      const nameByKey = new Map();
+      scheduleCache.forEach(s => {
+        const key = courseKey(s);
+        if (!nameByKey.has(key)) nameByKey.set(key, s.course_name || 'Unknown Course');
+      });
+      const sortedKeys = Array.from(nameByKey.keys())
+        .sort((a, b) => nameByKey.get(a).localeCompare(nameByKey.get(b)));
+
+      courseColorMap = {};
+      sortedKeys.forEach((key, i) => {
+        courseColorMap[key] = COURSE_COLOR_PALETTE[i % COURSE_COLOR_PALETTE.length];
+      });
+      return nameByKey;
+    }
+
+    function courseColor(s) {
+      return courseColorMap[courseKey(s)] || COURSE_COLOR_FALLBACK;
+    }
+
+    function renderCourseLegend(nameByKey) {
+      const legend = document.getElementById('courseColorLegend');
+      const entries = Array.from(nameByKey.entries())
+        .sort((a, b) => a[1].localeCompare(b[1]));
+
+      const swatches = entries.length === 0
+        ? `<span class="text-slate-400 font-medium">No courses scheduled yet</span>`
+        : entries.map(([key, name]) => `
+            <span class="inline-flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full" style="background-color:${courseColorMap[key]}"></span> ${name}
+            </span>
+          `).join('');
+
+      legend.innerHTML = `<span class="font-bold text-slate-700">Course Colors:</span>${swatches}`;
+    }
 
     async function fetchJSON(url, options) {
       const res = await fetch(url, { credentials: 'same-origin', ...options });
@@ -492,6 +556,9 @@
 
       const studyDays = new Set((preferencesCache?.study_days || '').split(',').map(d => d.trim()));
 
+      const nameByKey = buildCourseColorMap();
+      renderCourseLegend(nameByKey);
+
       const days = [];
       for (let i = 0; i < 7; i++) {
         // A full rolling week (today + i days) - every day of the week gets
@@ -554,10 +621,13 @@
               ` : day.sessions.map(s => `
                 <div class="space-y-1">
                   <span class="font-mono text-xs font-bold text-slate-600 block pl-1">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
-                  <a href="tasks.html?task_id=${s.task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between">
+                  <a href="tasks.html?task_id=${s.task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
                     <div>
                       <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${s.title}</h4>
-                      <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1">${s.course_name || ''}</p>
+                      <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${courseColor(s)}"></span>
+                        ${s.course_name || ''}
+                      </p>
                     </div>
                     <div class="mt-2 flex items-center justify-between text-[9px] font-semibold text-slate-400 pt-1.5 border-t border-slate-100">
                       <span>${s.start_page != null ? `Pages ${s.start_page}-${s.end_page}` : ''}</span>

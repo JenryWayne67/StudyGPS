@@ -389,6 +389,7 @@ router.get('/', async (req, res) => {
                 sch.end_page,
                 s.title,
                 s.material_id,
+                c.id AS course_id,
                 c.name AS course_name,
                 t.status AS task_status,
                 t.priority
