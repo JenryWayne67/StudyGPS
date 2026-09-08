@@ -288,6 +288,52 @@
     </div>
   </div>
 
+  <!-- EDIT SESSION TIME MODAL: manually move/resize one scheduled session
+       when the C++-generated slot doesn't work, instead of regenerating
+       the whole week over it. -->
+  <div id="editSessionModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl border border-slate-200 shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+            ✏️
+          </div>
+          <h3 class="font-bold text-slate-900 text-base">Edit Session Time</h3>
+        </div>
+        <button onclick="closeEditSessionModal()" class="w-8 h-8 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center font-bold text-base transition">
+          ✕
+        </button>
+      </div>
+
+      <div class="p-5 space-y-3">
+        <div id="editSessionError" class="hidden text-xs font-medium text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2"></div>
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
+          <input type="date" id="editSessionDate" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Start Time</label>
+            <input type="time" id="editSessionStart" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">End Time</label>
+            <input type="time" id="editSessionEnd" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+        <button type="button" onclick="closeEditSessionModal()" class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition">
+          Cancel
+        </button>
+        <button type="button" onclick="saveEditSessionModal()" id="editSessionSaveBtn" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition">
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Real data, loaded from the backend. currentWeekOffset counts whole
     // weeks (Monday-aligned) from this week; scheduleCache holds every
@@ -327,21 +373,28 @@
       return s.course_id != null ? `id:${s.course_id}` : `name:${s.course_name || 'Unknown Course'}`;
     }
 
-    // Assigns each distinct course a color, in alphabetical order by name
-    // so the same course lands on the same color every time this runs,
-    // rather than shifting around based on schedule order.
+    // Assigns each distinct course a color: its own stored color (set/
+    // changed on the Materials page) if it has one, otherwise the next
+    // color in the palette, walked in alphabetical-by-name order so an
+    // uncolored course lands on the same fallback color every time this
+    // runs, rather than shifting around based on schedule order.
     function buildCourseColorMap() {
       const nameByKey = new Map();
+      const storedColorByKey = new Map();
       scheduleCache.forEach(s => {
         const key = courseKey(s);
-        if (!nameByKey.has(key)) nameByKey.set(key, s.course_name || 'Unknown Course');
+        if (!nameByKey.has(key)) {
+          nameByKey.set(key, s.course_name || 'Unknown Course');
+          if (s.course_color) storedColorByKey.set(key, s.course_color);
+        }
       });
       const sortedKeys = Array.from(nameByKey.keys())
         .sort((a, b) => nameByKey.get(a).localeCompare(nameByKey.get(b)));
 
       courseColorMap = {};
-      sortedKeys.forEach((key, i) => {
-        courseColorMap[key] = COURSE_COLOR_PALETTE[i % COURSE_COLOR_PALETTE.length];
+      let paletteIndex = 0;
+      sortedKeys.forEach((key) => {
+        courseColorMap[key] = storedColorByKey.get(key) || COURSE_COLOR_PALETTE[paletteIndex++ % COURSE_COLOR_PALETTE.length];
       });
       return nameByKey;
     }
@@ -517,6 +570,74 @@
       await handleRegenerateWeek(); // hours changed - recompute with the C++ engine
     }
 
+    // ---- Manual session-time editing: lets the user drag one scheduled
+    // session to a different time/day directly, when the C++-generated
+    // slot doesn't work for them, without regenerating the whole week. ----
+    let editingScheduleId = null;
+
+    function openEditSessionModal(scheduleId, date, startTime, endTime) {
+      editingScheduleId = scheduleId;
+      document.getElementById('editSessionDate').value = date;
+      document.getElementById('editSessionStart').value = startTime;
+      document.getElementById('editSessionEnd').value = endTime;
+      document.getElementById('editSessionError').classList.add('hidden');
+      document.getElementById('editSessionModal').classList.remove('hidden');
+    }
+
+    function closeEditSessionModal() {
+      editingScheduleId = null;
+      document.getElementById('editSessionModal').classList.add('hidden');
+    }
+
+    async function saveEditSessionModal() {
+      if (editingScheduleId == null) return;
+      const errorEl = document.getElementById('editSessionError');
+      errorEl.classList.add('hidden');
+
+      const date = document.getElementById('editSessionDate').value;
+      const start_time = document.getElementById('editSessionStart').value;
+      const end_time = document.getElementById('editSessionEnd').value;
+
+      if (!date || !start_time || !end_time) {
+        errorEl.textContent = 'All fields are required.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+      if (start_time >= end_time) {
+        errorEl.textContent = 'End time must be after start time.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const btn = document.getElementById('editSessionSaveBtn');
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Saving…';
+
+      try {
+        const data = await fetchJSON(`/api/schedule/${editingScheduleId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, start_time, end_time })
+        });
+        if (!data || data.success === false) {
+          errorEl.textContent = (data && data.error) || 'Could not save changes.';
+          errorEl.classList.remove('hidden');
+          return;
+        }
+
+        closeEditSessionModal();
+        await loadSchedule();
+        renderWeeklyView();
+      } catch (err) {
+        errorEl.textContent = 'Could not reach the server. Please try again.';
+        errorEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
+    }
+
     function changeWeek(delta) {
       currentWeekOffset += delta;
       renderWeeklyView();
@@ -620,7 +741,12 @@
                 </div>
               ` : day.sessions.map(s => `
                 <div class="space-y-1">
-                  <span class="font-mono text-xs font-bold text-slate-600 block pl-1">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
+                  <div class="flex items-center justify-between pl-1">
+                    <span class="font-mono text-xs font-bold text-slate-600">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
+                    <button type="button" onclick="openEditSessionModal(${s.id}, '${s.date}', '${s.start_time}', '${s.end_time}')" title="Edit session time" class="text-slate-300 hover:text-blue-600 transition text-xs leading-none px-1">
+                      ✏️
+                    </button>
+                  </div>
                   <a href="tasks.html?task_id=${s.task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
                     <div>
                       <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${s.title}</h4>

@@ -288,4 +288,148 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// Same priority scale POST / uses (and sectionTaskManager.cpp for
+// PDF-derived tasks): difficulty*10 + up to ~20 for length. Shared here so
+// an edit's priority dropdown maps to the same numbers a new task gets.
+const PRIORITY_MAP = { low: 20, medium: 45, high: 70 };
+
+// ==========================================
+// PUT /api/tasks/:id
+// Edit a task's own fields (title/estimated_minutes/difficulty, which
+// live on its section) and the task's own fields (priority/deadline).
+// Every field is optional - only what's provided is changed. Existing
+// scheduled sessions for this task are left as-is; the user re-runs
+// "Regenerate Week" on the Schedule page to pick up the new numbers,
+// same as after editing a section's difficulty on Materials.
+// ==========================================
+router.put('/:id', async (req, res) => {
+    try {
+        const taskId = Number(req.params.id);
+        if (!taskId) {
+            return res.status(400).json({ success: false, error: 'Invalid task ID' });
+        }
+
+        const task = await db.prepare(`
+            SELECT
+                t.id, t.section_id, t.priority, t.deadline, t.status,
+                s.title, s.estimated_minutes, s.difficulty,
+                c.user_id AS owner_user_id
+            FROM tasks t
+            JOIN sections s ON s.id = t.section_id
+            LEFT JOIN courses c ON c.id = s.course_id
+            WHERE t.id = ?
+        `).get(taskId);
+
+        // Same 404 whether the task doesn't exist or just isn't this
+        // user's - don't reveal that a task ID belongs to someone else.
+        if (!task || task.owner_user_id !== req.user.id) {
+            return res.status(404).json({ success: false, error: `Task ${taskId} does not exist` });
+        }
+
+        const body = req.body || {};
+
+        let title = task.title;
+        if (body.title !== undefined) {
+            title = String(body.title).trim();
+            if (!title) {
+                return res.status(400).json({ success: false, error: 'Task title is required.' });
+            }
+        }
+
+        let estimatedMinutes = task.estimated_minutes;
+        if (body.estimated_minutes !== undefined) {
+            estimatedMinutes = Number(body.estimated_minutes);
+            if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+                return res.status(400).json({ success: false, error: 'estimated_minutes must be a positive number.' });
+            }
+        }
+
+        let difficulty = task.difficulty;
+        if (body.difficulty !== undefined) {
+            difficulty = Number(body.difficulty);
+            if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 5) {
+                return res.status(400).json({ success: false, error: 'difficulty must be an integer from 1 to 5.' });
+            }
+        }
+
+        let priority = task.priority;
+        if (body.priority !== undefined) {
+            // Accepts either the low/medium/high labels the Add/Edit Task
+            // forms use, or a raw numeric priority (what PDF-derived tasks
+            // already carry) so this route works for either kind of task.
+            if (typeof body.priority === 'string' && PRIORITY_MAP[body.priority.toLowerCase()] !== undefined) {
+                priority = PRIORITY_MAP[body.priority.toLowerCase()];
+            } else {
+                const numericPriority = Number(body.priority);
+                if (!Number.isFinite(numericPriority)) {
+                    return res.status(400).json({ success: false, error: 'priority must be low, medium, high, or a number.' });
+                }
+                priority = numericPriority;
+            }
+        }
+
+        const deadline = body.deadline !== undefined ? (body.deadline ? String(body.deadline) : null) : task.deadline;
+
+        await db.prepare(`
+            UPDATE sections SET title = ?, estimated_minutes = ?, difficulty = ? WHERE id = ?
+        `).run(title, estimatedMinutes, difficulty, task.section_id);
+
+        await db.prepare(`
+            UPDATE tasks SET priority = ?, deadline = ? WHERE id = ?
+        `).run(priority, deadline, taskId);
+
+        res.json({
+            success: true,
+            message: 'Task updated successfully',
+            task: { id: taskId, title, estimated_minutes: estimatedMinutes, difficulty, priority, deadline }
+        });
+    } catch (error) {
+        console.error('Update task error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// DELETE /api/tasks/:id
+// Removes a task and any schedules/study_sessions logged against it. The
+// section it came from (title/pages/estimated minutes) is left alone -
+// for a PDF-derived task it's real content worth keeping around (e.g. if
+// the material is later re-analyzed); for a custom task it's a small
+// orphaned row, cheap to leave rather than worth the risk of deleting a
+// section something else still points to.
+// ==========================================
+router.delete('/:id', async (req, res) => {
+    try {
+        const taskId = Number(req.params.id);
+        if (!taskId) {
+            return res.status(400).json({ success: false, error: 'Invalid task ID' });
+        }
+
+        const task = await db.prepare(`
+            SELECT t.id, c.user_id AS owner_user_id
+            FROM tasks t
+            JOIN sections s ON s.id = t.section_id
+            LEFT JOIN courses c ON c.id = s.course_id
+            WHERE t.id = ?
+        `).get(taskId);
+
+        if (!task || task.owner_user_id !== req.user.id) {
+            return res.status(404).json({ success: false, error: `Task ${taskId} does not exist` });
+        }
+
+        const deleteTask = db.transaction(async (tx) => {
+            await tx.prepare(`DELETE FROM schedules WHERE task_id = ?`).run(taskId);
+            await tx.prepare(`DELETE FROM study_sessions WHERE task_id = ?`).run(taskId);
+            await tx.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId);
+        });
+
+        await deleteTask();
+
+        res.json({ success: true, message: 'Task deleted successfully' });
+    } catch (error) {
+        console.error('Delete task error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;

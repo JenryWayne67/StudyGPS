@@ -391,6 +391,7 @@ router.get('/', async (req, res) => {
                 s.material_id,
                 c.id AS course_id,
                 c.name AS course_name,
+                c.color AS course_color,
                 t.status AS task_status,
                 t.priority
             FROM schedules sch
@@ -404,6 +405,68 @@ router.get('/', async (req, res) => {
         res.json({ success: true, schedule: rows });
     } catch (error) {
         console.error('Get schedule error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// ==========================================
+// PUT /api/schedule/:id
+// Manually move or resize one scheduled session - for when the
+// C++-generated time just doesn't work and the user would rather adjust
+// it directly than regenerate the whole week. date/start_time/end_time
+// are all optional; whichever are omitted keep their current value.
+// ==========================================
+router.put('/:id', async (req, res) => {
+    try {
+        const scheduleId = Number(req.params.id);
+        if (!scheduleId) {
+            return res.status(400).json({ success: false, error: 'Invalid schedule ID' });
+        }
+
+        const existing = await db.prepare(`
+            SELECT sch.id, sch.date, sch.start_time, sch.end_time, c.user_id AS owner_user_id
+            FROM schedules sch
+            JOIN tasks t ON t.id = sch.task_id
+            JOIN sections s ON s.id = t.section_id
+            JOIN courses c ON c.id = s.course_id
+            WHERE sch.id = ?
+        `).get(scheduleId);
+
+        // Same 404 whether the schedule entry doesn't exist or just isn't
+        // this user's - don't reveal that an ID belongs to someone else.
+        if (!existing || existing.owner_user_id !== req.user.id) {
+            return res.status(404).json({ success: false, error: `Schedule entry ${scheduleId} does not exist` });
+        }
+
+        const body = req.body || {};
+        const date = body.date !== undefined ? String(body.date) : existing.date;
+        const startTime = body.start_time !== undefined ? String(body.start_time) : existing.start_time;
+        const endTime = body.end_time !== undefined ? String(body.end_time) : existing.end_time;
+
+        if (!DATE_PATTERN.test(date)) {
+            return res.status(400).json({ success: false, error: 'date must be in YYYY-MM-DD format.' });
+        }
+        if (!TIME_PATTERN.test(startTime) || !TIME_PATTERN.test(endTime)) {
+            return res.status(400).json({ success: false, error: 'start_time/end_time must be in 24-hour HH:MM format.' });
+        }
+        if (startTime >= endTime) {
+            return res.status(400).json({ success: false, error: 'end_time must be after start_time.' });
+        }
+
+        await db.prepare(`
+            UPDATE schedules SET date = ?, start_time = ?, end_time = ? WHERE id = ?
+        `).run(date, startTime, endTime, scheduleId);
+
+        res.json({
+            success: true,
+            message: 'Session time updated successfully',
+            schedule: { id: scheduleId, date, start_time: startTime, end_time: endTime }
+        });
+    } catch (error) {
+        console.error('Update schedule entry error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

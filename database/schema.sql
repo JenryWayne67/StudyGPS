@@ -51,10 +51,15 @@ CREATE TABLE user_preferences (
 );
 
 -- COURSES
+-- color is a "#rrggbb" hex string used to color-code a course's sessions
+-- on the Schedule page and its chip on Materials; nullable so an older
+-- row (or one created without picking a color) falls back to the
+-- palette-position color the frontend/backend both compute on the fly.
 CREATE TABLE courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     name TEXT NOT NULL,
+    color TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 

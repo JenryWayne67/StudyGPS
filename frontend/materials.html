@@ -263,12 +263,16 @@
           <div>
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Color</label>
             <select id="newCourseColor" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="#2563eb" selected>🔵 Blue</option>
+              <option value="#3b82f6" selected>🔵 Blue</option>
               <option value="#10b981">🟢 Green</option>
               <option value="#8b5cf6">🟣 Purple</option>
               <option value="#f59e0b">🟡 Amber</option>
               <option value="#ec4899">🌸 Rose</option>
               <option value="#06b6d4">🌊 Cyan</option>
+              <option value="#f97316">🟠 Orange</option>
+              <option value="#ef4444">🔴 Red</option>
+              <option value="#14b8a6">🌿 Teal</option>
+              <option value="#6366f1">🔷 Indigo</option>
             </select>
           </div>
         </div>
@@ -317,9 +321,74 @@
     </div>
   </div>
 
+  <!-- EDIT COURSE MODAL -->
+  <div id="editCourseModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">
+            ✏️
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Edit Course</h3>
+            <p class="text-xs text-slate-400">Rename, recolor, or remove this course</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeEditCourseModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+          ✕
+        </button>
+      </div>
+
+      <div id="editCourseError" class="hidden text-xs font-medium text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2"></div>
+
+      <form id="editCourseForm" onsubmit="handleUpdateCourse(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Name *</label>
+          <input type="text" id="editCourseName" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Course Color</label>
+          <select id="editCourseColor" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="#3b82f6">🔵 Blue</option>
+            <option value="#10b981">🟢 Green</option>
+            <option value="#8b5cf6">🟣 Purple</option>
+            <option value="#f59e0b">🟡 Amber</option>
+            <option value="#ec4899">🌸 Rose</option>
+            <option value="#06b6d4">🌊 Cyan</option>
+            <option value="#f97316">🟠 Orange</option>
+            <option value="#ef4444">🔴 Red</option>
+            <option value="#14b8a6">🌿 Teal</option>
+            <option value="#6366f1">🔷 Indigo</option>
+          </select>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="pt-3 flex items-center justify-between gap-2.5">
+          <button type="button" onclick="handleDeleteCourse()" class="text-xs font-bold text-red-600 border border-red-200 hover:bg-red-50 rounded-xl px-3 py-2 transition">
+            🗑️ Delete Course
+          </button>
+          <div class="flex items-center gap-2.5">
+            <button type="button" onclick="closeEditCourseModal()" class="btn btn-secondary btn-sm">
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary btn-sm shadow-sm">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
   <script>
     let currentSelectedMaterialId = null;
     let currentCourseMaterials = [];
+    let coursesCache = [];
+    let editingCourseId = null;
 
     async function renderCourseOptions(selectCourseId = null) {
       try {
@@ -332,6 +401,7 @@
         }
 
         const courses = data.courses;
+        coursesCache = courses;
 
         const select = document.getElementById('courseSelect');
         const chipsContainer = document.getElementById('courseChipsList');
@@ -343,6 +413,21 @@
           select.value ||
           (courses.length > 0 ? courses[0].id : null);
 
+        if (courses.length === 0) {
+          // Everything deleted, or a brand-new account - nothing to
+          // select/upload against yet.
+          select.innerHTML = '';
+          if (chipsContainer) chipsContainer.innerHTML = '';
+          document.getElementById('materialsList').innerHTML = `
+            <div class="p-8 text-center space-y-2">
+              <span class="text-3xl block">📚</span>
+              <p class="text-xs font-bold text-slate-600">No courses yet.</p>
+              <p class="text-[11px] text-slate-400 font-medium">Click "Add New Course" above to get started.</p>
+            </div>
+          `;
+          return;
+        }
+
         // Populate select dropdown
         select.innerHTML = courses.map(c => `
           <option value="${c.id}" ${String(c.id) === String(currentVal) ? 'selected' : ''}>
@@ -350,28 +435,40 @@
           </option>
         `).join('');
 
-        // Populate quick course chips
+        // Populate quick course chips - each pairs a switch-course button
+        // (showing the course's own color as a dot) with a small edit
+        // affordance, kept as a sibling button rather than nested inside
+        // the switch button so the two clickable areas don't conflict.
         if (chipsContainer) {
           chipsContainer.innerHTML = courses.map(c => `
-            <button
-              type="button"
-              onclick="switchCourse(${c.id})"
-              class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition ${
+            <div class="inline-flex items-center gap-0.5 rounded-xl border transition ${
                 String(c.id) === String(currentVal)
-                  ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-              }"
-            >
-              <span>📘</span>
-              <span>${c.name}</span>
-            </button>
+                  ? 'bg-blue-50 border-blue-300 shadow-sm'
+                  : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+              }">
+              <button
+                type="button"
+                onclick="switchCourse(${c.id})"
+                class="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 text-xs font-semibold ${
+                  String(c.id) === String(currentVal) ? 'text-blue-700' : 'text-slate-600'
+                }"
+              >
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${c.color || '#94a3b8'}"></span>
+                <span>${c.name}</span>
+              </button>
+              <button
+                type="button"
+                onclick="openEditCourseModal(${c.id})"
+                title="Edit course"
+                class="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-100/60 transition text-[11px] mr-0.5"
+              >
+                ✏️
+              </button>
+            </div>
           `).join('');
         }
 
-        // Load materials for selected course
-        if (courses.length > 0) {
-          loadCourseMaterials();
-        }
+        loadCourseMaterials();
 
       } catch (error) {
         console.error('Failed to load courses:', error);
@@ -398,13 +495,15 @@
       const name = document.getElementById('newCourseName').value.trim();
       if (!name) return;
 
-      // Note: the courses table only stores id/user_id/name today, so
-      // course code/color/icon picked in this form aren't persisted yet.
+      // Note: the courses table stores name + color; course code/icon
+      // picked in this form are still cosmetic-only and aren't persisted.
+      const color = document.getElementById('newCourseColor').value;
+
       try {
         const response = await fetch('/api/courses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name, color })
         });
         const data = await response.json();
 
@@ -418,6 +517,91 @@
       } catch (error) {
         console.error('Failed to create course:', error);
         alert('Could not create course: ' + error.message);
+      }
+    }
+
+    // ---- Edit / delete an existing course. ----
+
+    function openEditCourseModal(courseId) {
+      const course = coursesCache.find(c => String(c.id) === String(courseId));
+      if (!course) return;
+
+      editingCourseId = course.id;
+      document.getElementById('editCourseName').value = course.name;
+      document.getElementById('editCourseColor').value = course.color || '#3b82f6';
+      document.getElementById('editCourseError').classList.add('hidden');
+      document.getElementById('editCourseModal').classList.remove('hidden');
+    }
+
+    function closeEditCourseModal() {
+      editingCourseId = null;
+      document.getElementById('editCourseModal').classList.add('hidden');
+      document.getElementById('editCourseForm').reset();
+    }
+
+    async function handleUpdateCourse(e) {
+      e.preventDefault();
+      if (editingCourseId == null) return;
+
+      const errorEl = document.getElementById('editCourseError');
+      errorEl.classList.add('hidden');
+
+      const name = document.getElementById('editCourseName').value.trim();
+      const color = document.getElementById('editCourseColor').value;
+      if (!name) return;
+
+      try {
+        const response = await fetch(`/api/courses/${editingCourseId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, color })
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to update course');
+        }
+
+        closeEditCourseModal();
+        renderCourseOptions(data.course.id);
+
+      } catch (error) {
+        console.error('Failed to update course:', error);
+        errorEl.textContent = error.message;
+        errorEl.classList.remove('hidden');
+      }
+    }
+
+    // Deleting a course removes everything under it too - its materials,
+    // detected sections, generated tasks, and any scheduled sessions or
+    // logged study time those tasks had (see DELETE /api/courses/:id) -
+    // so this is confirmed clearly since it can't be undone.
+    async function handleDeleteCourse() {
+      if (editingCourseId == null) return;
+      const course = coursesCache.find(c => String(c.id) === String(editingCourseId));
+      const label = course ? course.name : 'this course';
+
+      const confirmed = confirm(
+        `Delete "${label}"?\n\nThis permanently removes all of its materials, detected sections, ` +
+        `tasks, and scheduled sessions. This cannot be undone.`
+      );
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/courses/${editingCourseId}`, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to delete course');
+        }
+
+        closeEditCourseModal();
+        document.getElementById('courseSelect').value = '';
+        renderCourseOptions();
+
+      } catch (error) {
+        console.error('Failed to delete course:', error);
+        alert('Could not delete course: ' + error.message);
       }
     }
 

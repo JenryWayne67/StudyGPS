@@ -290,6 +290,54 @@
     </div>
   </div>
 
+  <!-- EDIT TASK MODAL -->
+  <div id="editTaskModal" class="hidden fixed inset-0 z-[100] bg-slate-900/40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold text-slate-900">Edit Task</h2>
+        <button type="button" onclick="closeEditTaskModal()" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Task name</label>
+          <input type="text" id="editTaskTitle" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Estimated minutes</label>
+            <input type="number" id="editTaskMinutes" min="5" step="5" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
+            <select id="editTaskPriority" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Deadline (optional)</label>
+          <input type="date" id="editTaskDeadline" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <p id="editTaskError" class="hidden text-xs text-red-600 font-medium"></p>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 mt-5">
+        <button type="button" onclick="handleDeleteTask()" class="text-xs font-bold text-red-600 border border-red-200 hover:bg-red-50 rounded-xl px-3 py-2 transition">
+          🗑️ Delete Task
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="closeEditTaskModal()" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="button" id="editTaskSaveBtn" onclick="submitEditTask()" class="btn btn-primary btn-sm">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // State management
     let activeTaskId = null;
@@ -772,6 +820,9 @@
                     ${openPdfTaskIds.has(task.id) ? 'Hide PDF' : 'View PDF'}
                   </button>
                 ` : ''}
+                <button type="button" onclick="openEditTaskModal(${task.id})" title="Edit task" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
+                  ✏️ Edit
+                </button>
                 <button type="button" onclick="openFullscreen(${task.id})" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
                   Full Screen
@@ -945,9 +996,132 @@
       }
     }
 
+    // ---- Edit / delete an existing task. Operates on the task itself
+    // (task.id), not one specific occurrence/card - a task split across
+    // multiple scheduled sessions has more than one card (see occKey()),
+    // but they all edit/delete together since they're the same task. ----
+    let editingTaskId = null;
+
+    // allTasksCache's `priority` is the raw numeric value tasks.js stores
+    // (low/medium/high map to 20/45/70, and a PDF-derived task can carry
+    // any number sectionTaskManager.cpp computed) - picks whichever label
+    // is numerically closest so the edit form starts on a sensible choice
+    // instead of always defaulting to Medium.
+    function priorityLabelForNumber(value) {
+      const buckets = { low: 20, medium: 45, high: 70 };
+      let closest = 'medium';
+      let smallestDiff = Infinity;
+      for (const [label, num] of Object.entries(buckets)) {
+        const diff = Math.abs(Number(value) - num);
+        if (diff < smallestDiff) {
+          smallestDiff = diff;
+          closest = label;
+        }
+      }
+      return closest;
+    }
+
+    function openEditTaskModal(taskId) {
+      const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
+      if (!task) return;
+
+      editingTaskId = task.id;
+      document.getElementById('editTaskTitle').value = task.title || '';
+      document.getElementById('editTaskMinutes').value = task.estimated_minutes || 30;
+      document.getElementById('editTaskPriority').value = priorityLabelForNumber(task.priority);
+      document.getElementById('editTaskDeadline').value = task.deadline || '';
+      document.getElementById('editTaskError').classList.add('hidden');
+      document.getElementById('editTaskModal').classList.remove('hidden');
+    }
+
+    function closeEditTaskModal() {
+      editingTaskId = null;
+      document.getElementById('editTaskModal').classList.add('hidden');
+    }
+
+    async function submitEditTask() {
+      if (editingTaskId == null) return;
+      const errorEl = document.getElementById('editTaskError');
+      errorEl.classList.add('hidden');
+
+      const title = document.getElementById('editTaskTitle').value.trim();
+      const minutes = Number(document.getElementById('editTaskMinutes').value);
+      const priority = document.getElementById('editTaskPriority').value;
+      const deadline = document.getElementById('editTaskDeadline').value || null;
+
+      if (!title) {
+        errorEl.textContent = 'Please enter a task name.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        errorEl.textContent = 'Estimated minutes must be a positive number.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const saveBtn = document.getElementById('editTaskSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      try {
+        const res = await fetch(`/api/tasks/${editingTaskId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, estimated_minutes: minutes, priority, deadline })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Could not save changes.');
+        }
+
+        closeEditTaskModal();
+        await loadTasks();
+        renderTasks();
+      } catch (err) {
+        errorEl.textContent = err.message || 'Something went wrong saving the task.';
+        errorEl.classList.remove('hidden');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+      }
+    }
+
+    // Removes this task entirely, including any of its scheduled sessions
+    // (every card for it, if it was split across more than one).
+    async function handleDeleteTask() {
+      if (editingTaskId == null) return;
+      const task = allTasksCache.find(t => Number(t.id) === Number(editingTaskId));
+      const label = task ? task.title : 'this task';
+
+      const confirmed = confirm(`Delete "${label}"? This also removes it from your schedule. This cannot be undone.`);
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch(`/api/tasks/${editingTaskId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Could not delete task.');
+        }
+
+        // If the timer was running for this task, don't leave it "active"
+        // for a task that no longer exists.
+        if (Number(activeTaskId) === Number(editingTaskId)) {
+          closeActiveTimer();
+        }
+
+        closeEditTaskModal();
+        await loadTasks();
+        renderTasks();
+      } catch (err) {
+        alert(`Couldn't delete task: ${err.message}`);
+      }
+    }
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && fullscreenTaskId != null) closeFullscreen();
       if (e.key === 'Escape' && !document.getElementById('addTaskModal').classList.contains('hidden')) closeAddTaskModal();
+      if (e.key === 'Escape' && !document.getElementById('editTaskModal').classList.contains('hidden')) closeEditTaskModal();
     });
 
     document.addEventListener('DOMContentLoaded', async () => {

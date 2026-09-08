@@ -118,6 +118,14 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added schedules.reminder_sent column.');
   }
 
+  const courseCols = await client.execute(`PRAGMA table_info(courses)`);
+  const courseColumnNames = courseCols.rows.map((r) => r.name);
+
+  if (!courseColumnNames.includes('color')) {
+    await client.execute(`ALTER TABLE courses ADD COLUMN color TEXT`);
+    console.log('Migrated: added courses.color column.');
+  }
+
   // Backfill: materials uploaded before this change have their PDF bytes
   // on disk at the old file_path, not in the database yet. Read each one
   // in now so existing uploads (re-analyze, etc.) keep working without
