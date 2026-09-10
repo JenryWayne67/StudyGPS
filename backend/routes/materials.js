@@ -6,6 +6,15 @@ const { PDFParse } = require('pdf-parse');
 const { execFileSync } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../lib/db');
+const {
+    saveMaterialFile,
+    deleteMaterialFile,
+    forEachMaterialFileChunk,
+    loadMaterialFile,
+    unreadableReason,
+    extractPdfText,
+    UnusablePdfError
+} = require('../lib/materialFiles');
 
 const router = express.Router();
 
@@ -20,7 +29,8 @@ function courseBelongsToUser(courseId, userId) {
 // logged-in user? Returns the material row (with course_id) if so.
 function materialOwnedByUser(materialId, userId) {
     return db.prepare(`
-        SELECT m.*
+        SELECT m.id, m.course_id, m.filename, m.file_path, m.uploaded_at, m.status,
+               m.page_count, m.file_size, m.extracted_text, m.deadline
         FROM materials m
         JOIN courses c ON c.id = m.course_id
         WHERE m.id = ? AND c.user_id = ?
@@ -40,6 +50,8 @@ function materialOwnedByUser(materialId, userId) {
 // nothing extra to configure.
 // ==========================================
 
+const MAX_UPLOAD_MB = 50;
+
 const upload = multer({
     storage: multer.memoryStorage(),
 
@@ -52,9 +64,25 @@ const upload = multer({
     },
 
     limits: {
-        fileSize: 50 * 1024 * 1024
+        fileSize: MAX_UPLOAD_MB * 1024 * 1024
     }
 });
+
+// Runs the multer upload and turns its errors (too big, not a PDF) into the
+// same JSON { success, error } shape as every other failure, so the page can
+// show the real reason instead of choking on Express's HTML error page.
+function receivePdf(req, res, next) {
+    upload.single('pdf')(req, res, (err) => {
+        if (!err) return next();
+        const tooBig = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+        res.status(tooBig ? 413 : 400).json({
+            success: false,
+            error: tooBig
+                ? `This PDF can't be uploaded: it's larger than ${MAX_UPLOAD_MB} MB.`
+                : `This file can't be uploaded: ${err.message}`
+        });
+    });
+}
 
 // ==========================================
 // GET /api/materials
@@ -211,7 +239,9 @@ router.post('/', async (req, res) => {
 // ACTUAL PDF UPLOAD
 // ==========================================
 
-router.post('/upload', upload.single('pdf'), async (req, res) => {
+router.post('/upload', receivePdf, async (req, res) => {
+    let materialId = null;
+
     try {
         const courseId = Number(req.body.course_id);
 
@@ -238,29 +268,32 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
             });
         }
 
-        // req.file.buffer is the whole PDF's bytes, held in memory only for
-        // this request (multer.memoryStorage() - see the upload config
-        // above) - stored straight into the database as a BLOB rather than
-        // a local file, so it survives restarts/redeploys the same way the
-        // rest of the user's data does.
+        // Read the text once, straight from the uploaded bytes: to refuse a
+        // PDF StudyGPS can't use (with the reason) before storing anything,
+        // and so analyzing it later never loads the whole file back out of
+        // the database.
+        let extracted;
+        try {
+            extracted = await extractPdfText(req.file.buffer);
+        } catch (err) {
+            if (err instanceof UnusablePdfError) {
+                return res.status(422).json({ success: false, error: err.message });
+            }
+            throw err;
+        }
+
         const result = await db.prepare(`
-            INSERT INTO materials (
-                course_id,
-                filename,
-                file_data,
-                status,
-                page_count,
-                file_size
-            )
+            INSERT INTO materials (course_id, filename, status, page_count, file_size, extracted_text)
             VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
-            courseId,
-            req.file.originalname,
-            req.file.buffer,
-            'uploaded',
-            null,
-            req.file.size
-        );
+        `).run(courseId, req.file.originalname, 'uploading', extracted.pageCount, req.file.size, extracted.text);
+        materialId = result.lastInsertRowid;
+
+        // The PDF itself (held in memory only for this request) is stored in
+        // the database in 1 MB pieces - see backend/lib/materialFiles.js -
+        // so it survives restarts/redeploys like the rest of the user's data
+        // without any single huge database request.
+        await saveMaterialFile(materialId, req.file.buffer);
+        await db.prepare(`UPDATE materials SET status = ? WHERE id = ?`).run('uploaded', materialId);
 
         const material = await db.prepare(`
             SELECT
@@ -273,7 +306,7 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
                 file_size
             FROM materials
             WHERE id = ?
-        `).get(result.lastInsertRowid);
+        `).get(materialId);
 
         res.status(201).json({
             success: true,
@@ -283,6 +316,16 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
 
     } catch (error) {
         console.error('PDF upload error:', error);
+
+        // Don't leave a half-stored material behind.
+        if (materialId != null) {
+            try {
+                await deleteMaterialFile(materialId);
+                await db.prepare(`DELETE FROM materials WHERE id = ?`).run(materialId);
+            } catch (cleanupError) {
+                console.error(`Could not clean up material ${materialId} after a failed upload:`, cleanupError.message);
+            }
+        }
 
         res.status(500).json({
             success: false,
@@ -568,28 +611,37 @@ const material = await materialOwnedByUser(materialId, req.user.id);
             });
         }
 
-        if (!material.file_data) {
-            return res.status(404).json({
+        // The text was read once at upload time (POST /upload) - use it, so
+        // analyzing never loads the whole PDF back out of the database. Only
+        // a PDF uploaded before that change still has to be read here, once;
+        // its text is then saved for next time.
+        let text = material.extracted_text;
+        let pageCount = material.page_count;
+        if (!text) {
+            const dataBuffer = await loadMaterialFile(materialId);
+            if (!dataBuffer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'PDF file not found on server'
+                });
+            }
+
+            parser = new PDFParse({ data: dataBuffer });
+            const result = await parser.getText();
+            text = result.text;
+            pageCount = result.total;
+            await db.prepare(`UPDATE materials SET extracted_text = ? WHERE id = ?`).run(text, materialId);
+        }
+
+        const unreadable = unreadableReason(text, pageCount);
+        if (unreadable) {
+            return res.status(422).json({
                 success: false,
-                error: 'PDF file not found on server'
+                error: `This PDF can't be analyzed: ${unreadable}`
             });
         }
 
-        // material.file_data comes back from the database as an
-        // ArrayBuffer (libsql's BLOB representation) - PDFParse and the
-        // rest of Node's Buffer-based APIs need a real Buffer.
-        const dataBuffer = Buffer.from(material.file_data);
-
-        // Create PDF parser
-        parser = new PDFParse({
-            data: dataBuffer
-        });
-
-        // Extract text
-        const result = await parser.getText();
-
-        const pageCount = result.total;
-        const pages = splitIntoPages(result.text);
+        const pages = splitIntoPages(text);
         const detectedSections = detectSections(pages);
 
         // Step 1: pages + sections, in one atomic, idempotent unit -
@@ -703,7 +755,7 @@ const applyPagesAndSections = db.transaction(async (tx) => {
             sections: insertedSections,
             tasks: insertedTasks,
             task_generation_error: taskGenerationError,
-            text_preview: result.text.substring(0, 2000)
+            text_preview: text.substring(0, 2000)
         });
 
     } catch (error) {
@@ -952,21 +1004,36 @@ router.get('/:id/file', async (req, res) => {
             });
         }
 
-        if (!material.file_data) {
+        // Sent piece by piece as it's read from the database, so opening a
+        // big PDF never holds the whole file in memory at once.
+        let started = false;
+        const found = await forEachMaterialFileChunk(materialId, async (chunk) => {
+            if (!started) {
+                started = true;
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `inline; filename="${material.filename || 'material.pdf'}"`);
+            }
+            if (!res.write(chunk)) {
+                await new Promise((resolve) => res.once('drain', resolve));
+            }
+        });
+
+        if (!found) {
             return res.status(404).json({
                 success: false,
                 error: 'PDF file not found - it may need to be re-uploaded'
             });
         }
 
-        const dataBuffer = Buffer.from(material.file_data);
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${material.filename || 'material.pdf'}"`);
-        res.send(dataBuffer);
+        res.end();
 
     } catch (error) {
         console.error('Get material file error:', error);
+
+        // Part of the PDF may already be on its way - just end the response.
+        if (res.headersSent) {
+            return res.end();
+        }
 
         res.status(500).json({
             success: false,

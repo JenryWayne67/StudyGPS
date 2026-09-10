@@ -768,6 +768,18 @@
     // Runs the real PDF -> pages -> sections -> C++ task engine pipeline
     // (backend/routes/materials.js POST /:id/process). Safe to click more
     // than once - reprocessing a material is idempotent server-side.
+    // A response that isn't JSON (e.g. an error page while the server is
+    // restarting) would otherwise surface as a confusing parse error.
+    async function readJsonResponse(response) {
+      try {
+        return await response.json();
+      } catch (_) {
+        throw new Error(response.status === 413
+          ? "This PDF can't be uploaded: it's too large."
+          : "the server didn't answer properly (it may be restarting). Please try again in a minute.");
+      }
+    }
+
     async function triggerAnalyze(materialId) {
       currentSelectedMaterialId = materialId;
       const mat = currentCourseMaterials.find(m => m.id === materialId);
@@ -778,7 +790,7 @@
 
       try {
         const response = await fetch(`/api/materials/${materialId}/process`, { method: 'POST' });
-        const data = await response.json();
+        const data = await readJsonResponse(response);
 
         if (!data.success) {
           throw new Error(data.error || 'Failed to process material');
@@ -803,7 +815,9 @@
 
       } catch (error) {
         console.error('Failed to analyze material:', error);
-        alert('Could not analyze this PDF: ' + error.message);
+        // The server's own "This PDF can't be analyzed: ..." reason reads on
+        // its own; anything else gets a prefix.
+        alert(/can't be analyzed/.test(error.message) ? error.message : 'Could not analyze this PDF: ' + error.message);
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
       }
@@ -845,7 +859,7 @@
           method: 'POST',
           body: formData
         });
-        const data = await response.json();
+        const data = await readJsonResponse(response);
 
         if (!data.success) {
           throw new Error(data.error || 'Upload failed');
@@ -856,7 +870,9 @@
 
       } catch (error) {
         console.error('Failed to upload material:', error);
-        alert('Could not upload PDF: ' + error.message);
+        // The server's own "This PDF can't be uploaded: ..." reasons read on
+        // their own; anything else gets a prefix.
+        alert(/can't be uploaded/.test(error.message) ? error.message : 'Could not upload PDF: ' + error.message);
       } finally {
         e.target.value = '';
       }

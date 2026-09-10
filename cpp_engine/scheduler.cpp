@@ -27,6 +27,10 @@
 // Lecture files of the same course are studied one after another: a
 // course's next PDF (in upload order) only starts once every section of
 // the previous one has been scheduled.
+//
+// Different courses take turns (HTML, CSS, Networking, HTML, ...) so no
+// single course fills the calendar while the others wait; a course with
+// work due within kUrgentDays days gets extra turns until that work is in.
 
 #include <algorithm>
 #include <cctype>
@@ -145,7 +149,10 @@ public:
         // Each chain's sessions, in the order they must be studied.
         std::vector<std::vector<int>> streams = buildStreams();
         std::vector<std::vector<PlannedSession>> chainSessions;
+        std::vector<std::string> chainCourse; // what takes turns: the course (or the chain itself)
         for (const std::vector<int>& chain : buildChains(streams)) {
+            const Task& first = tasks_[streams[chain.front()].front()];
+            chainCourse.push_back(first.courseId.empty() ? "#" + std::to_string(chainSessions.size()) : first.courseId);
             chainSessions.emplace_back();
             for (int streamIdx : chain) {
                 for (PlannedSession& session : planStreamSessions(streams[streamIdx], sessionLength)) {
@@ -154,7 +161,7 @@ public:
                 }
             }
         }
-        std::vector<PlannedSession> ordered = mergeChains(chainSessions);
+        std::vector<PlannedSession> ordered = mergeChains(chainSessions, chainCourse);
 
         // Working copies we consume from as sessions get placed.
         std::vector<TimeSlot> remainingSlots = availableSlots_;
@@ -222,6 +229,7 @@ private:
         std::vector<SessionPiece> pieces;  // in page order
         int minutes = 0;                   // session length (shorter only for an exact stream's last one)
         int chain = 0;                     // which chain (course sequence) it belongs to
+        int deadline = std::numeric_limits<int>::max(); // earliest deadlineDayIndex among its tasks
         double score = 0;                  // highest taskScore among its tasks
     };
 
@@ -424,6 +432,7 @@ private:
                 piece.partNumber = ++seenPerTask[piece.taskIdx];
                 piece.totalParts = piecesPerTask[piece.taskIdx];
                 session.score = std::max(session.score, taskScore(tasks_[piece.taskIdx]));
+                session.deadline = std::min(session.deadline, tasks_[piece.taskIdx].deadlineDayIndex);
             }
         }
         return sessions;
@@ -433,6 +442,9 @@ private:
     // when it doesn't reach a whole new page.
     static constexpr long long kMinPieceMinutes = 10;
 
+    // Work due within this many days gets extra turns - see mergeChains().
+    static constexpr int kUrgentDays = 3;
+
     // Whole pages of a task completed by scaled stream position `at`
     // (rounded half up), for a task occupying [begin, begin + length).
     static int pageOffsetAt(long long at, long long begin, long long length, int pageCount) {
@@ -440,36 +452,67 @@ private:
     }
 
     // -------------------------------------------------------------
-    // 4. Merge all chains into one session order: always take the chain
-    //    whose next session is most important, so urgent work goes first
-    //    while each chain's own sessions stay in order (pages in order,
-    //    and a course's files one after another). A session counts as
-    //    important as anything after it in its chain (you can't reach an
-    //    urgent later chapter without studying what comes before it).
-    //    Ties go to the chain listed first.
+    // 4. Merge all chains into one session order.
+    //
+    //    Courses take turns: the next session goes to the course that has
+    //    waited longest since its last turn, so HTML, CSS and Networking
+    //    alternate instead of one course filling the calendar first. Each
+    //    chain's own sessions stay in order (pages in order, and a course's
+    //    files one after another).
+    //
+    //    Urgent work gets extra turns: while any course has a session due
+    //    within kUrgentDays days, those sessions go first, closest deadline
+    //    first. A session counts as due as early as anything after it in its
+    //    chain (the pages before an urgent chapter have to come first).
+    //
+    //    Ties go to the more important session (priority/urgency/difficulty
+    //    score, again counting what follows it), then to the chain listed
+    //    first.
     // -------------------------------------------------------------
-    std::vector<PlannedSession> mergeChains(std::vector<std::vector<PlannedSession>>& chains) const {
-        std::vector<std::vector<double>> effective(chains.size());
+    std::vector<PlannedSession> mergeChains(std::vector<std::vector<PlannedSession>>& chains,
+                                            const std::vector<std::string>& chainCourse) const {
+        std::vector<std::vector<double>> score(chains.size());
+        std::vector<std::vector<int>> dueBy(chains.size());
         for (size_t i = 0; i < chains.size(); ++i) {
-            effective[i].resize(chains[i].size());
+            score[i].resize(chains[i].size());
+            dueBy[i].resize(chains[i].size());
             double best = std::numeric_limits<double>::lowest();
+            int soonest = std::numeric_limits<int>::max();
             for (size_t j = chains[i].size(); j-- > 0;) {
                 best = std::max(best, chains[i][j].score);
-                effective[i][j] = best;
+                soonest = std::min(soonest, chains[i][j].deadline);
+                score[i][j] = best;
+                dueBy[i][j] = soonest;
             }
         }
 
+        std::map<std::string, long long> lastTurn; // course -> turn number of its latest session
+        auto turnOf = [&](size_t i) {
+            auto it = lastTurn.find(chainCourse[i]);
+            return it == lastTurn.end() ? -1LL : it->second;
+        };
         std::vector<size_t> next(chains.size(), 0);
+
+        // Is chain a's next session a better pick than chain b's?
+        auto better = [&](size_t a, size_t b) {
+            const int dueA = dueBy[a][next[a]], dueB = dueBy[b][next[b]];
+            const bool urgentA = dueA <= kUrgentDays, urgentB = dueB <= kUrgentDays;
+            if (urgentA != urgentB) return urgentA;
+            if (urgentA && dueA != dueB) return dueA < dueB;
+            const long long turnA = turnOf(a), turnB = turnOf(b);
+            if (turnA != turnB) return turnA < turnB;
+            return score[a][next[a]] > score[b][next[b]];
+        };
+
         std::vector<PlannedSession> ordered;
-        while (true) {
+        for (long long turn = 0;; ++turn) {
             int pick = -1;
             for (size_t i = 0; i < chains.size(); ++i) {
                 if (next[i] >= chains[i].size()) continue;
-                if (pick == -1 || effective[i][next[i]] > effective[pick][next[pick]]) {
-                    pick = static_cast<int>(i);
-                }
+                if (pick == -1 || better(i, static_cast<size_t>(pick))) pick = static_cast<int>(i);
             }
             if (pick == -1) break;
+            lastTurn[chainCourse[pick]] = turn;
             ordered.push_back(std::move(chains[pick][next[pick]++]));
         }
         return ordered;

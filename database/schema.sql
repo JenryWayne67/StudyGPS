@@ -4,6 +4,7 @@ PRAGMA foreign_keys = ON;
 DROP TABLE IF EXISTS study_sessions;
 DROP TABLE IF EXISTS schedules;
 DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS material_file_chunks;
 DROP TABLE IF EXISTS material_pages;
 DROP TABLE IF EXISTS sections;
 DROP TABLE IF EXISTS materials;
@@ -74,6 +75,7 @@ CREATE TABLE materials (
     page_count INTEGER,
     file_size TEXT,
     extracted_text TEXT,
+    file_data BLOB, -- legacy: a whole PDF in one value, for uploads from before material_file_chunks
     deadline TEXT, -- optional "YYYY-MM-DD" the whole material is due by
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
@@ -86,6 +88,17 @@ CREATE TABLE material_pages (
     page_number INTEGER NOT NULL,
     content TEXT,
     UNIQUE(material_id, page_number),
+    FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
+);
+
+-- MATERIAL FILE CHUNKS - an uploaded PDF, stored in 1 MB pieces (see
+-- backend/lib/materialFiles.js). One huge BLOB per PDF made every upload
+-- or read of a large file hold several ~30 MB copies in memory at once.
+CREATE TABLE material_file_chunks (
+    material_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (material_id, chunk_index),
     FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
 );
 

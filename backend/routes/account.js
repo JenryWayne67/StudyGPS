@@ -60,12 +60,12 @@ router.post('/clear-study-data', async (req, res) => {
                 const materialPlaceholders = materialRows.map(() => '?').join(',');
                 const materialIds = materialRows.map((r) => r.id);
                 await tx.prepare(`DELETE FROM material_pages WHERE material_id IN (${materialPlaceholders})`).run(...materialIds);
+                // Uploaded PDF bytes live in material_file_chunks (older ones
+                // in materials.file_data) - see backend/lib/materialFiles.js.
+                await tx.prepare(`DELETE FROM material_file_chunks WHERE material_id IN (${materialPlaceholders})`).run(...materialIds);
             }
 
             await tx.prepare(`DELETE FROM sections WHERE course_id IN (${coursePlaceholders})`).run(...courseIds);
-            // Uploaded PDF bytes live in materials.file_data (see backend/
-            // routes/materials.js) - deleting the row is enough, there's no
-            // separate file on disk to clean up anymore.
             await tx.prepare(`DELETE FROM materials WHERE course_id IN (${coursePlaceholders})`).run(...courseIds);
 
             return { materialsDeleted: materialRows.length };

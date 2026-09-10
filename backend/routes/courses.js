@@ -216,6 +216,7 @@ router.delete('/:id', async (req, res) => {
             if (materialIds.length > 0) {
                 const materialPlaceholders = materialIds.map(() => '?').join(',');
                 await tx.prepare(`DELETE FROM material_pages WHERE material_id IN (${materialPlaceholders})`).run(...materialIds);
+                await tx.prepare(`DELETE FROM material_file_chunks WHERE material_id IN (${materialPlaceholders})`).run(...materialIds);
                 await tx.prepare(`DELETE FROM materials WHERE id IN (${materialPlaceholders})`).run(...materialIds);
             }
 

@@ -80,6 +80,22 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added materials.deadline column.');
   }
 
+  if (!columnNames.includes('extracted_text')) {
+    await client.execute(`ALTER TABLE materials ADD COLUMN extracted_text TEXT`);
+    console.log('Migrated: added materials.extracted_text column.');
+  }
+
+  // PDFs are stored in 1 MB pieces (see backend/lib/materialFiles.js)
+  // instead of one huge materials.file_data value.
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS material_file_chunks (
+      material_id INTEGER NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      data BLOB NOT NULL,
+      PRIMARY KEY (material_id, chunk_index)
+    )
+  `);
+
   // Persistent session storage (backend/lib/sessionStore.js) - a database
   // that predates this table just never had one; create it the same way
   // schema.sql would on a fresh database.
