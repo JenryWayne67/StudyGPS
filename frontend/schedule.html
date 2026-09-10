@@ -437,9 +437,9 @@
 
     // A task with more estimated minutes than one session length gets
     // split into multiple session-length chunks by the C++ scheduler
-    // (see cpp_engine/scheduler.cpp splitTask()) - e.g. a 90-minute task
-    // becomes a 50-minute block on Monday and a 40-minute block on
-    // Tuesday, both pointing at the same task_id. Without this, clicking
+    // (see cpp_engine/scheduler.cpp) - e.g. a 90-minute task becomes two
+    // 50-minute sessions, possibly on different days, both pointing at
+    // the same task_id. Without this, clicking
     // either block always started a countdown for the task's FULL 90
     // minutes on tasks.html, which never matched the block you actually
     // clicked - this computes that block's own real length in minutes so
@@ -449,6 +449,42 @@
       const [eh, em] = String(endHHMM).split(':').map(Number);
       const diff = (eh * 60 + em) - (sh * 60 + sm);
       return diff > 0 ? diff : null;
+    }
+
+    // Every session is exactly the user's preferred length. A session that
+    // covers several short sections (e.g. pages 4-4 and 5-18) comes back
+    // from /api/schedule as one row per section, all with the same
+    // date/start/end - fold those back into one session so it shows as a
+    // single block rather than several tiny ones.
+    function groupIntoSessions(rows) {
+      const sessions = [];
+      const byKey = new Map();
+      for (const row of rows) {
+        const key = `${row.date}|${row.start_time}|${row.end_time}`;
+        let session = byKey.get(key);
+        if (!session) {
+          session = { ...row, items: [] };
+          byKey.set(key, session);
+          sessions.push(session);
+        }
+        session.items.push(row);
+      }
+      return sessions;
+    }
+
+    // "Pages 4-18" for a session covering pages 4-4 and 5-18; ranges that
+    // don't touch are listed separately.
+    function sessionPagesLabel(items) {
+      const merged = [];
+      for (const item of items) {
+        if (item.start_page == null || item.end_page == null) continue;
+        const start = Number(item.start_page);
+        const end = Number(item.end_page);
+        const last = merged[merged.length - 1];
+        if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+        else merged.push([start, end]);
+      }
+      return merged.length ? 'Pages ' + merged.map(([s, e]) => `${s}-${e}`).join(', ') : '';
     }
 
     // First day of the 7-day window `offset` windows from today (offset 0 =
@@ -572,11 +608,13 @@
 
     // ---- Manual session-time editing: lets the user drag one scheduled
     // session to a different time/day directly, when the C++-generated
-    // slot doesn't work for them, without regenerating the whole week. ----
-    let editingScheduleId = null;
+    // slot doesn't work for them, without regenerating the whole week.
+    // A session can be several schedule rows (one per section it covers,
+    // all sharing the same time), so an edit moves all of them together. ----
+    let editingScheduleIds = null;
 
-    function openEditSessionModal(scheduleId, date, startTime, endTime) {
-      editingScheduleId = scheduleId;
+    function openEditSessionModal(scheduleIds, date, startTime, endTime) {
+      editingScheduleIds = String(scheduleIds).split(',').map(Number);
       document.getElementById('editSessionDate').value = date;
       document.getElementById('editSessionStart').value = startTime;
       document.getElementById('editSessionEnd').value = endTime;
@@ -585,12 +623,12 @@
     }
 
     function closeEditSessionModal() {
-      editingScheduleId = null;
+      editingScheduleIds = null;
       document.getElementById('editSessionModal').classList.add('hidden');
     }
 
     async function saveEditSessionModal() {
-      if (editingScheduleId == null) return;
+      if (editingScheduleIds == null) return;
       const errorEl = document.getElementById('editSessionError');
       errorEl.classList.add('hidden');
 
@@ -615,15 +653,17 @@
       btn.textContent = 'Saving…';
 
       try {
-        const data = await fetchJSON(`/api/schedule/${editingScheduleId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date, start_time, end_time })
-        });
-        if (!data || data.success === false) {
-          errorEl.textContent = (data && data.error) || 'Could not save changes.';
-          errorEl.classList.remove('hidden');
-          return;
+        for (const scheduleId of editingScheduleIds) {
+          const data = await fetchJSON(`/api/schedule/${scheduleId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, start_time, end_time })
+          });
+          if (!data || data.success === false) {
+            errorEl.textContent = (data && data.error) || 'Could not save changes.';
+            errorEl.classList.remove('hidden');
+            return;
+          }
         }
 
         closeEditSessionModal();
@@ -692,9 +732,9 @@
         const dateStr = toDateStr(date);
         const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
 
-        const sessionsForDay = scheduleCache
+        const sessionsForDay = groupIntoSessions(scheduleCache
           .filter(s => s.date === dateStr)
-          .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+          .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '')));
 
         days.push({
           dayName,
@@ -743,20 +783,20 @@
                 <div class="space-y-1">
                   <div class="flex items-center justify-between pl-1">
                     <span class="font-mono text-xs font-bold text-slate-600">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
-                    <button type="button" onclick="openEditSessionModal(${s.id}, '${s.date}', '${s.start_time}', '${s.end_time}')" title="Edit session time" class="text-slate-300 hover:text-blue-600 transition text-xs leading-none px-1">
+                    <button type="button" onclick="openEditSessionModal('${s.items.map(i => i.id).join(',')}', '${s.date}', '${s.start_time}', '${s.end_time}')" title="Edit session time" class="text-slate-300 hover:text-blue-600 transition text-xs leading-none px-1">
                       ✏️
                     </button>
                   </div>
-                  <a href="tasks.html?task_id=${s.task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
+                  <a href="tasks.html?task_id=${(s.items.find(i => i.task_status !== 'Completed') || s).task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
                     <div>
-                      <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${s.title}</h4>
+                      ${s.items.map(i => `<h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${i.title}</h4>`).join('')}
                       <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1 flex items-center gap-1">
                         <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${courseColor(s)}"></span>
                         ${s.course_name || ''}
                       </p>
                     </div>
                     <div class="mt-2 flex items-center justify-between text-[9px] font-semibold text-slate-400 pt-1.5 border-t border-slate-100">
-                      <span>${s.start_page != null ? `Pages ${s.start_page}-${s.end_page}` : ''}</span>
+                      <span>${sessionPagesLabel(s.items)}</span>
                       <span class="text-blue-600 group-hover:translate-x-0.5 transition">&rarr;</span>
                     </div>
                   </a>

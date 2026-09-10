@@ -276,6 +276,42 @@
       return diff > 0 ? diff : null;
     }
 
+    // Every session is exactly the user's preferred length. A session that
+    // covers several short sections (e.g. pages 4-4 and 5-18) comes back
+    // from /api/schedule as one row per section, all with the same
+    // date/start/end - fold those back into one session (same as
+    // schedule.html's groupIntoSessions).
+    function groupIntoSessions(rows) {
+      const sessions = [];
+      const byKey = new Map();
+      for (const row of rows) {
+        const key = `${row.date}|${row.start_time}|${row.end_time}`;
+        let session = byKey.get(key);
+        if (!session) {
+          session = { ...row, items: [] };
+          byKey.set(key, session);
+          sessions.push(session);
+        }
+        session.items.push(row);
+      }
+      return sessions;
+    }
+
+    // "Pages 4-18" for a session covering pages 4-4 and 5-18; ranges that
+    // don't touch are listed separately.
+    function sessionPagesLabel(items) {
+      const merged = [];
+      for (const item of items) {
+        if (item.start_page == null || item.end_page == null) continue;
+        const start = Number(item.start_page);
+        const end = Number(item.end_page);
+        const last = merged[merged.length - 1];
+        if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+        else merged.push([start, end]);
+      }
+      return merged.length ? 'Pages ' + merged.map(([s, e]) => `${s}-${e}`).join(', ') : '';
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
       // Sync user profile
       const authData = await fetchJSON('/api/auth/me');
@@ -325,21 +361,25 @@
 
       // Today's study timeline, from the real generated schedule.
       const todayStr = todayLocalDateStr(now);
-      const todaysSessions = schedule.filter(s => s.date === todayStr);
+      const todaysSessions = groupIntoSessions(schedule.filter(s => s.date === todayStr));
       const todayContainer = document.getElementById('todayStudyContainer');
+      // The section a session's Start button opens: its first one that
+      // isn't finished yet.
+      const sessionTarget = (session) => session.items.find(i => i.task_status !== 'Completed') || session;
 
       if (todaysSessions.length > 0) {
         todayContainer.innerHTML = todaysSessions.map((item, idx) => {
           const mins = sessionMinutes(item.start_time, item.end_time);
           const minutesParam = mins ? `&minutes=${mins}` : '';
+          const pages = sessionPagesLabel(item.items);
           return `
           <div class="${idx > 0 ? 'pt-4' : 'pt-2'} flex items-center justify-between gap-4">
             <div class="space-y-1">
               <span class="text-xs font-bold text-blue-600">${formatClock(item.start_time)}</span>
-              <h3 class="text-sm font-bold text-slate-900">${item.title}</h3>
-              <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'} • Pages ${item.start_page}-${item.end_page}</p>
+              <h3 class="text-sm font-bold text-slate-900">${item.items.map(i => i.title).join(' + ')}</h3>
+              <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'}${pages ? ` • ${pages}` : ''}</p>
             </div>
-            <a href="tasks.html?task_id=${item.task_id}${minutesParam}" class="btn btn-primary btn-sm whitespace-nowrap">
+            <a href="tasks.html?task_id=${sessionTarget(item).task_id}${minutesParam}" class="btn btn-primary btn-sm whitespace-nowrap">
               Start &rarr;
             </a>
           </div>
@@ -348,9 +388,9 @@
 
         const firstItem = todaysSessions[0];
         const firstMins = sessionMinutes(firstItem.start_time, firstItem.end_time);
-        document.getElementById('recTaskTitle').textContent = firstItem.title;
+        document.getElementById('recTaskTitle').textContent = firstItem.items.map(i => i.title).join(' + ');
         document.getElementById('recTaskMeta').textContent = `${firstItem.course_name || 'Study'} • ${formatClock(firstItem.start_time)}`;
-        document.getElementById('recTaskBtn').href = `tasks.html?task_id=${firstItem.task_id}${firstMins ? `&minutes=${firstMins}` : ''}`;
+        document.getElementById('recTaskBtn').href = `tasks.html?task_id=${sessionTarget(firstItem).task_id}${firstMins ? `&minutes=${firstMins}` : ''}`;
       } else {
         todayContainer.innerHTML = `
           <div class="pt-2 pb-2 text-center space-y-3">

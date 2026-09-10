@@ -5,12 +5,24 @@
 //
 // dayIndex = days from today (0 = today, 1 = tomorrow, ...). Callers
 // convert real calendar dates into this before calling in.
+//
+// Every study session is exactly sessionLengthMinutes long - the user's
+// preferred session length, never a leftover sliver. All page-range tasks
+// from the same material form one continuous, page-ordered stream of
+// reading that gets cut into sessions, so:
+//   - a session can cover several short sections back to back (e.g.
+//     pages 4-4 and 5-18 in one 50-minute session), instead of a 1-page
+//     section becoming its own 5-minute session;
+//   - a long section can span several sessions;
+//   - pages of one material are always studied in order, whatever the
+//     individual sections' priorities are.
+// A session never mixes two different materials. Tasks without a page
+// range or material (e.g. custom tasks) are streams of their own.
 
 #include <algorithm>
-#include <cmath>
 #include <iostream>
+#include <limits>
 #include <map>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -33,7 +45,7 @@ struct Task {
     int endPage = -1;
 
     // Which PDF/material this task's section came from (empty if none).
-    // Lets prioritizeTasks() keep same-material tasks in page order.
+    // Tasks sharing a materialId are scheduled as one page-ordered stream.
     std::string materialId;
 
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
@@ -48,13 +60,15 @@ struct TimeSlot {
 };
 
 struct SchedulerConfig {
-    int sessionLengthMinutes;   // preferred length of one study session
+    int sessionLengthMinutes;   // length of every study session
     int breakLengthMinutes;     // break inserted after each session
     int maxDailyMinutes;        // cap on total *study* minutes per day (breaks excluded)
 };
 
 // ---------------------------------------------------------------------
-// Output data structure — what createSchedule() produces, one per session
+// Output data structure — one task's share of one session. A session
+// covering several tasks produces one of these per task, all with the
+// same day/start/end.
 // ---------------------------------------------------------------------
 
 struct ScheduledSession {
@@ -66,7 +80,7 @@ struct ScheduledSession {
     int endMinutes;
     int startPage = -1;   // -1 if the task has no pages
     int endPage = -1;
-    int partNumber;       // 1-based; >1 means this task was split
+    int partNumber;       // 1-based; >1 means this task spans several sessions
     int totalParts;
 };
 
@@ -98,109 +112,246 @@ public:
         std::vector<ScheduledSession> schedule;
         unscheduledWarnings_.clear();
 
-        std::vector<Task> ordered = prioritizeTasks(tasks_);
+        const int sessionLength = config_.sessionLengthMinutes;
+        if (sessionLength <= 0) {
+            unscheduledWarnings_.push_back("Session length must be greater than 0 - nothing was scheduled");
+            return schedule;
+        }
+        if (sessionLength > config_.maxDailyMinutes) {
+            unscheduledWarnings_.push_back(
+                "Session length (" + std::to_string(sessionLength) + " min) is longer than the daily study limit (" +
+                std::to_string(config_.maxDailyMinutes) + " min) - no session can be scheduled");
+        }
+
+        std::vector<std::vector<PlannedSession>> streamSessions;
+        for (const std::vector<int>& stream : buildStreams()) {
+            streamSessions.push_back(planStreamSessions(stream, sessionLength));
+        }
+        std::vector<PlannedSession> ordered = mergeStreams(streamSessions);
 
         // Working copies we consume from as sessions get placed.
         std::vector<TimeSlot> remainingSlots = availableSlots_;
         std::map<int, int> dailyUsedMinutes; // dayIndex -> minutes used so far
 
-        // Minutes placed in each slot since the last break was taken there.
-        // A "study session" is the user's preferred block length (e.g. 50
-        // min), not "however much one task happens to need" - a task
-        // estimated at only 5-6 minutes (e.g. a short PDF section) must be
-        // packed back-to-back with the next task(s) in the same slot, with
-        // no break between them, until a full session's worth of study time
-        // has accumulated. Only then is a break inserted. Without this, a
-        // break was previously added after every single task regardless of
-        // size, turning tiny tasks into their own isolated tiny "sessions".
-        std::vector<int> blockMinutesSinceBreak(remainingSlots.size(), 0);
-
-        for (const Task& task : ordered) {
-            std::vector<int> chunks = splitTask(task.estimatedMinutes, config_.sessionLengthMinutes);
-
-            int currentPage = task.startPage;
-            int minutesPlacedSoFar = 0;
-            int totalParts = static_cast<int>(chunks.size());
-
-            for (int i = 0; i < totalParts; ++i) {
-                int chunkMinutes = chunks[i];
-
-                int slotIdx = findAvailableSlot(remainingSlots, dailyUsedMinutes, chunkMinutes);
-                if (slotIdx == -1) {
-                    unscheduledWarnings_.push_back(
-                        task.name + ": could not find room for " + std::to_string(chunkMinutes) +
-                        " more minute(s) (part " + std::to_string(i + 1) + "/" +
-                        std::to_string(totalParts) + ")");
-                    continue; // try the next chunk anyway; later chunks may still fit elsewhere
-                }
-
-                TimeSlot& slot = remainingSlots[slotIdx];
-
-                // Work out the page range for this chunk (proportional to
-                // time, using cumulative rounding so the parts add up
-                // exactly to the task's full page range).
-                int chunkStartPage = -1, chunkEndPage = -1;
-                if (task.hasPages()) {
-                    minutesPlacedSoFar += chunkMinutes;
-                    double fraction = static_cast<double>(minutesPlacedSoFar) / task.estimatedMinutes;
-                    int pageBoundary = task.startPage +
-                        static_cast<int>(std::round(fraction * task.pageCount())) - 1;
-                    pageBoundary = std::min(pageBoundary, task.endPage);
-
-                    chunkStartPage = currentPage;
-                    chunkEndPage = std::max(pageBoundary, chunkStartPage); // never go backwards
-                    currentPage = chunkEndPage + 1;
-                }
-
-                ScheduledSession session = createSchedule(
-                    task, slot, chunkMinutes, chunkStartPage, chunkEndPage, i + 1, totalParts);
-                schedule.push_back(session);
-
-                // Consume the time from the slot, and only take a break once
-                // a full session's worth of study time has accumulated in
-                // this block - not after every individual task/chunk. That
-                // keeps small tasks packed into one properly-sized session
-                // instead of each becoming its own tiny session-and-break.
-                dailyUsedMinutes[slot.dayIndex] += chunkMinutes;
-                slot.startMinutes += chunkMinutes;
-                blockMinutesSinceBreak[slotIdx] += chunkMinutes;
-
-                if (blockMinutesSinceBreak[slotIdx] >= config_.sessionLengthMinutes &&
-                    slot.startMinutes + config_.breakLengthMinutes <= slot.endMinutes) {
-                    slot.startMinutes += config_.breakLengthMinutes;
-                    blockMinutesSinceBreak[slotIdx] = 0;
-                }
+        // Every session is the same length and always goes into the
+        // earliest slot with room, so sessions land in chronological order
+        // exactly as `ordered` lists them - which is what keeps a
+        // material's pages in order on the calendar. (Once one session
+        // doesn't fit anywhere, no later one can either.)
+        for (const PlannedSession& planned : ordered) {
+            int slotIdx = findAvailableSlot(remainingSlots, dailyUsedMinutes, sessionLength);
+            if (slotIdx == -1) {
+                unscheduledWarnings_.push_back(
+                    "Could not find room for a " + std::to_string(sessionLength) +
+                    "-minute session covering " + describeSession(planned));
+                continue;
             }
+
+            TimeSlot& slot = remainingSlots[slotIdx];
+            for (const SessionPiece& piece : planned.pieces) {
+                schedule.push_back(createSchedule(tasks_[piece.taskIdx], slot, sessionLength,
+                                                  piece.startPage, piece.endPage,
+                                                  piece.partNumber, piece.totalParts));
+            }
+
+            // Consume the session and the break after it. A break that
+            // doesn't fit closes the slot rather than letting the next
+            // session start with no break at all.
+            dailyUsedMinutes[slot.dayIndex] += sessionLength;
+            slot.startMinutes += sessionLength;
+            slot.startMinutes = std::min(slot.startMinutes + config_.breakLengthMinutes, slot.endMinutes);
         }
 
         return schedule;
     }
 
-    // -------------------------------------------------------------
-    // 2. Sort by priority/urgency/difficulty, except same-material tasks
-    //    always stay in page order.
-    // -------------------------------------------------------------
-    std::vector<Task> prioritizeTasks(std::vector<Task> tasksToSort) const {
-        std::sort(tasksToSort.begin(), tasksToSort.end(),
-                  [this](const Task& a, const Task& b) {
-                      if (sameMaterial(a, b)) {
-                          return a.startPage < b.startPage; // earlier pages first, always
-                      }
-                      return taskScore(a) > taskScore(b); // higher score = scheduled earlier
-                  });
-        return tasksToSort;
-    }
+    const std::vector<std::string>& unscheduledWarnings() const { return unscheduledWarnings_; }
 
-    // Same material only when both have a matching, non-empty materialId
-    // and a real page range; otherwise falls back to score-based ordering.
-    bool sameMaterial(const Task& a, const Task& b) const {
-        return !a.materialId.empty() &&
-               a.materialId == b.materialId &&
-               a.hasPages() && b.hasPages();
-    }
+private:
+    // One task's share of a planned session.
+    struct SessionPiece {
+        int taskIdx;          // index into tasks_
+        int startPage = -1;
+        int endPage = -1;
+        int partNumber = 1;
+        int totalParts = 1;
+    };
+
+    // One session-length block of study, before it's given a time slot.
+    struct PlannedSession {
+        std::vector<SessionPiece> pieces;  // in page order
+        double score = 0;                  // highest taskScore among its tasks
+    };
 
     // -------------------------------------------------------------
-    // 3. Find the first available slot with room for `neededMinutes`
+    // 2. Group tasks into streams: every page-range task of the same
+    //    material in one stream, sorted by page; any other task is a
+    //    stream of its own. Streams keep the input order of their first
+    //    task (the tie-breaker when priorities are equal).
+    // -------------------------------------------------------------
+    std::vector<std::vector<int>> buildStreams() const {
+        std::vector<std::vector<int>> streams;
+        std::map<std::string, size_t> streamByMaterial;
+
+        for (int i = 0; i < static_cast<int>(tasks_.size()); ++i) {
+            const Task& task = tasks_[i];
+            if (task.materialId.empty() || !task.hasPages()) {
+                streams.push_back({i});
+                continue;
+            }
+            auto it = streamByMaterial.find(task.materialId);
+            if (it == streamByMaterial.end()) {
+                streamByMaterial[task.materialId] = streams.size();
+                streams.push_back({i});
+            } else {
+                streams[it->second].push_back(i);
+            }
+        }
+
+        for (std::vector<int>& stream : streams) {
+            std::stable_sort(stream.begin(), stream.end(), [this](int a, int b) {
+                if (tasks_[a].startPage != tasks_[b].startPage) return tasks_[a].startPage < tasks_[b].startPage;
+                return tasks_[a].endPage < tasks_[b].endPage;
+            });
+        }
+        return streams;
+    }
+
+    // -------------------------------------------------------------
+    // 3. Cut one stream into sessions of exactly `sessionLength` minutes.
+    //
+    // The stream's total estimated time T becomes round(T / sessionLength)
+    // sessions (at least one), and the reading is spread evenly across
+    // them: session k covers stream minutes [k*T/n, (k+1)*T/n). Each
+    // task's pages are split in proportion to its minutes, so every page
+    // lands in exactly one session and pages never go backwards.
+    //
+    // Positions are kept in units of 1/n minute so all the boundaries are
+    // exact integers (no floating-point drift between sessions).
+    // -------------------------------------------------------------
+    std::vector<PlannedSession> planStreamSessions(const std::vector<int>& stream, int sessionLength) const {
+        std::vector<long long> taskStart, taskLength; // scaled
+        long long total = 0;
+        for (int idx : stream) total += std::max(tasks_[idx].estimatedMinutes, 1);
+
+        long long n = std::max<long long>(1, (2 * total + sessionLength) / (2LL * sessionLength));
+
+        long long cursor = 0;
+        for (int idx : stream) {
+            long long m = std::max(tasks_[idx].estimatedMinutes, 1) * n;
+            taskStart.push_back(cursor);
+            taskLength.push_back(m);
+            cursor += m;
+        }
+        // Stream end == total * n; session s covers [s*total, (s+1)*total).
+
+        std::vector<PlannedSession> sessions(static_cast<size_t>(n));
+
+        for (size_t k = 0; k < stream.size(); ++k) {
+            const Task& task = tasks_[stream[k]];
+            long long begin = taskStart[k];
+            long long end = begin + taskLength[k];
+
+            for (long long s = begin / total; s <= (end - 1) / total; ++s) {
+                long long lo = std::max(begin, s * total);
+                long long hi = std::min(end, (s + 1) * total);
+
+                SessionPiece piece;
+                piece.taskIdx = stream[k];
+                if (task.hasPages()) {
+                    int from = pageOffsetAt(lo, begin, taskLength[k], task.pageCount());
+                    int to = pageOffsetAt(hi, begin, taskLength[k], task.pageCount());
+                    if (to <= from) continue; // rounds to no whole page; neighbours cover it
+                    piece.startPage = task.startPage + from;
+                    piece.endPage = task.startPage + to - 1;
+                }
+                sessions[static_cast<size_t>(s)].pieces.push_back(piece);
+            }
+        }
+
+        // A session can round to zero whole pages when a section's time
+        // estimate is long relative to its page count (e.g. one page
+        // estimated at 3 hours). It's still real study time - keep it on
+        // the page the stream is at when that session starts.
+        for (long long s = 0; s < n; ++s) {
+            PlannedSession& session = sessions[static_cast<size_t>(s)];
+            if (!session.pieces.empty()) continue;
+            long long at = s * total;
+            size_t k = 0;
+            while (k + 1 < stream.size() && taskStart[k] + taskLength[k] <= at) ++k;
+            const Task& task = tasks_[stream[k]];
+            SessionPiece piece;
+            piece.taskIdx = stream[k];
+            if (task.hasPages()) {
+                long long offset = (at - taskStart[k]) * task.pageCount() / taskLength[k];
+                int page = task.startPage + static_cast<int>(std::min<long long>(offset, task.pageCount() - 1));
+                piece.startPage = page;
+                piece.endPage = page;
+            }
+            session.pieces.push_back(piece);
+        }
+
+        // Part numbers per task (a task spanning 3 sessions is part 1/3,
+        // 2/3, 3/3), and each session's score for ordering.
+        std::map<int, int> piecesPerTask;
+        for (const PlannedSession& session : sessions) {
+            for (const SessionPiece& piece : session.pieces) ++piecesPerTask[piece.taskIdx];
+        }
+        std::map<int, int> seenPerTask;
+        for (PlannedSession& session : sessions) {
+            session.score = std::numeric_limits<double>::lowest();
+            for (SessionPiece& piece : session.pieces) {
+                piece.partNumber = ++seenPerTask[piece.taskIdx];
+                piece.totalParts = piecesPerTask[piece.taskIdx];
+                session.score = std::max(session.score, taskScore(tasks_[piece.taskIdx]));
+            }
+        }
+        return sessions;
+    }
+
+    // Whole pages of a task completed by scaled stream position `at`
+    // (rounded half up), for a task occupying [begin, begin + length).
+    static int pageOffsetAt(long long at, long long begin, long long length, int pageCount) {
+        return static_cast<int>((2 * (at - begin) * pageCount + length) / (2 * length));
+    }
+
+    // -------------------------------------------------------------
+    // 4. Merge all streams into one session order: always take the
+    //    stream whose next session is most important, so urgent work goes
+    //    first while each stream's own sessions stay in page order. A
+    //    session counts as important as anything after it in its stream
+    //    (you can't reach an urgent later chapter without reading the
+    //    pages before it). Ties go to the stream listed first.
+    // -------------------------------------------------------------
+    std::vector<PlannedSession> mergeStreams(std::vector<std::vector<PlannedSession>>& streams) const {
+        std::vector<std::vector<double>> effective(streams.size());
+        for (size_t i = 0; i < streams.size(); ++i) {
+            effective[i].resize(streams[i].size());
+            double best = std::numeric_limits<double>::lowest();
+            for (size_t j = streams[i].size(); j-- > 0;) {
+                best = std::max(best, streams[i][j].score);
+                effective[i][j] = best;
+            }
+        }
+
+        std::vector<size_t> next(streams.size(), 0);
+        std::vector<PlannedSession> ordered;
+        while (true) {
+            int pick = -1;
+            for (size_t i = 0; i < streams.size(); ++i) {
+                if (next[i] >= streams[i].size()) continue;
+                if (pick == -1 || effective[i][next[i]] > effective[pick][next[pick]]) {
+                    pick = static_cast<int>(i);
+                }
+            }
+            if (pick == -1) break;
+            ordered.push_back(std::move(streams[pick][next[pick]++]));
+        }
+        return ordered;
+    }
+
+    // -------------------------------------------------------------
+    // 5. Find the first available slot with room for `neededMinutes`
     //    Returns an index into `slots`, or -1 if none fits.
     // -------------------------------------------------------------
     int findAvailableSlot(const std::vector<TimeSlot>& slots,
@@ -213,63 +364,9 @@ public:
             if (it != dailyUsedMinutes.end()) usedToday = it->second;
 
             if (usedToday + neededMinutes > config_.maxDailyMinutes) continue;
-            if (canFitTask(slot, neededMinutes)) return i;
+            if (slot.endMinutes - slot.startMinutes >= neededMinutes) return i;
         }
         return -1;
-    }
-
-    // -------------------------------------------------------------
-    // 4. Check whether a chunk of `minutesNeeded` fits in a slot
-    // -------------------------------------------------------------
-    bool canFitTask(const TimeSlot& slot, int minutesNeeded) const {
-        return (slot.endMinutes - slot.startMinutes) >= minutesNeeded;
-    }
-
-    // -------------------------------------------------------------
-    // 5. Split a task's total time into session-length chunks
-    //
-    // A plain totalMinutes/sessionLength split leaves a ragged last
-    // chunk (e.g. a 105-minute task at a 50-minute session length
-    // becomes 50/50/5) - that stray few-minute "session" is not a
-    // useful study block. Instead, fold a too-small leftover into the
-    // previous full chunk so every session is a reasonable length.
-    // -------------------------------------------------------------
-    std::vector<int> splitTask(int totalMinutes, int sessionLengthMinutes) const {
-        std::vector<int> chunks;
-        if (totalMinutes <= 0) {
-            chunks.push_back(0); // defensive: zero-length task
-            return chunks;
-        }
-        if (sessionLengthMinutes <= 0) {
-            chunks.push_back(totalMinutes);
-            return chunks;
-        }
-
-        int fullSessions = totalMinutes / sessionLengthMinutes;
-        int remainder = totalMinutes % sessionLengthMinutes;
-
-        if (fullSessions == 0) {
-            // Task shorter than one session - one chunk for the whole task.
-            chunks.push_back(totalMinutes);
-            return chunks;
-        }
-        if (remainder == 0) {
-            chunks.assign(fullSessions, sessionLengthMinutes);
-            return chunks;
-        }
-
-        // Leftover shorter than this isn't worth its own session; merge it
-        // into the last full chunk instead of scheduling a separate 5-min
-        // block. Threshold is half the session length (capped at 15 min).
-        const int kMinSessionMinutes = std::min(15, sessionLengthMinutes / 2);
-
-        chunks.assign(fullSessions, sessionLengthMinutes);
-        if (remainder < kMinSessionMinutes) {
-            chunks.back() += remainder;
-        } else {
-            chunks.push_back(remainder);
-        }
-        return chunks;
     }
 
     // -------------------------------------------------------------
@@ -291,9 +388,18 @@ public:
         return s;
     }
 
-    const std::vector<std::string>& unscheduledWarnings() const { return unscheduledWarnings_; }
+    std::string describeSession(const PlannedSession& session) const {
+        std::string out;
+        for (const SessionPiece& piece : session.pieces) {
+            if (!out.empty()) out += ", ";
+            out += tasks_[piece.taskIdx].name;
+            if (piece.startPage >= 0) {
+                out += " (pages " + std::to_string(piece.startPage) + "-" + std::to_string(piece.endPage) + ")";
+            }
+        }
+        return out;
+    }
 
-private:
     // Combines priority, deadline urgency, and difficulty into one score.
     // Weights are just reasonable defaults for sample data — tune freely.
     double taskScore(const Task& task) const {
@@ -327,10 +433,12 @@ private:
 //   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
 // materialId may be empty (two consecutive pipes).
 //
-// Output (stdout, one scheduled session per line, key=value):
+// Output (stdout, one line per task per session, key=value):
 //   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
 //   end_minutes=<n> start_page=<n> end_page=<n> part=<n> total_parts=<n>
-// Unscheduled tasks are reported as: warning=<message>
+// A session covering several tasks prints one line per task, all with the
+// same day_index/start_minutes/end_minutes.
+// Sessions that couldn't be placed are reported as: warning=<message>
 //
 // Build:
 //   g++ -std=c++17 -O2 -o scheduler cpp_engine/scheduler.cpp
@@ -427,7 +535,7 @@ int main() {
         std::cout << "warning=" << warning << "\n";
     }
 
-    std::cerr << "scheduler: scheduled " << schedule.size() << " session(s) from "
+    std::cerr << "scheduler: scheduled " << schedule.size() << " session piece(s) from "
                << tasks.size() << " task(s) into " << slots.size() << " slot(s)\n";
 
     return 0;

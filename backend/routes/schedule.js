@@ -399,7 +399,7 @@ router.get('/', async (req, res) => {
             JOIN sections s ON s.id = t.section_id
             JOIN courses c ON c.id = s.course_id
             WHERE c.user_id = ?
-            ORDER BY sch.date ASC, sch.start_time ASC
+            ORDER BY sch.date ASC, sch.start_time ASC, sch.id ASC
         `).all(req.user.id);
 
         res.json({ success: true, schedule: rows });

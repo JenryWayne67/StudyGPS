@@ -364,7 +364,7 @@ async function checkAndSendScheduleReminders() {
       SELECT
           sch.id AS schedule_id, sch.start_time, sch.end_time,
           s.title, c.name AS course_name,
-          u.email, u.name AS user_name
+          u.id AS user_id, u.email, u.name AS user_name
       FROM schedules sch
       JOIN tasks t ON t.id = sch.task_id
       JOIN sections s ON s.id = t.section_id
@@ -377,24 +377,38 @@ async function checkAndSendScheduleReminders() {
         AND t.status != 'Completed'
     `).all(today);
 
+    // One session can cover several short sections - one schedules row
+    // per section, all sharing the same start/end time. Send one reminder
+    // per session, not one per row.
+    const sessions = new Map();
     for (const row of rows) {
-      const [sh, sm] = String(row.start_time).split(':').map(Number);
+      const key = `${row.user_id}|${row.start_time}|${row.end_time}`;
+      if (!sessions.has(key)) sessions.set(key, { ...row, titles: [], scheduleIds: [] });
+      const session = sessions.get(key);
+      session.titles.push(row.title);
+      session.scheduleIds.push(row.schedule_id);
+    }
+
+    for (const session of sessions.values()) {
+      const [sh, sm] = String(session.start_time).split(':').map(Number);
       const startMinutes = sh * 60 + sm;
       // Not upcoming within the reminder window yet (or its window has
       // already passed) - leave it for a later check, or let it quietly
       // stop being retried once it's no longer "upcoming" at all.
       if (startMinutes < nowMinutes || startMinutes > windowEndMinutes) continue;
-      if (!row.email) continue;
+      if (!session.email) continue;
 
+      const title = session.titles.join(', ');
       const result = await sendMail({
-        to: row.email,
-        subject: `StudyGPS reminder: "${row.title}" starts at ${formatClock12(row.start_time)}`,
-        text: `Hi ${row.user_name || 'there'},\n\nYour study session "${row.title}" (${row.course_name}) is scheduled from ${formatClock12(row.start_time)} to ${formatClock12(row.end_time)} today.\n\nGood luck!\n- StudyGPS`,
-        html: `<p>Hi ${row.user_name || 'there'},</p><p>Your study session <strong>${row.title}</strong> (${row.course_name}) is scheduled from ${formatClock12(row.start_time)} to ${formatClock12(row.end_time)} today.</p><p>Good luck!<br>- StudyGPS</p>`
+        to: session.email,
+        subject: `StudyGPS reminder: "${title}" starts at ${formatClock12(session.start_time)}`,
+        text: `Hi ${session.user_name || 'there'},\n\nYour study session "${title}" (${session.course_name}) is scheduled from ${formatClock12(session.start_time)} to ${formatClock12(session.end_time)} today.\n\nGood luck!\n- StudyGPS`,
+        html: `<p>Hi ${session.user_name || 'there'},</p><p>Your study session <strong>${title}</strong> (${session.course_name}) is scheduled from ${formatClock12(session.start_time)} to ${formatClock12(session.end_time)} today.</p><p>Good luck!<br>- StudyGPS</p>`
       });
 
       if (result.sent) {
-        await db.prepare(`UPDATE schedules SET reminder_sent = 1 WHERE id = ?`).run(row.schedule_id);
+        const placeholders = session.scheduleIds.map(() => '?').join(',');
+        await db.prepare(`UPDATE schedules SET reminder_sent = 1 WHERE id IN (${placeholders})`).run(...session.scheduleIds);
       }
       // A failed send (SMTP not configured, transient network error, etc.)
       // leaves reminder_sent at 0 so the next check retries it, up until

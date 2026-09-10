@@ -201,6 +201,28 @@ router.get('/', async (req, res) => {
             }
         }
 
+        // Show tasks in the order they'll actually be studied: scheduled
+        // rows by session date/time (page order within one session), then
+        // anything not scheduled yet grouped by course/material in page
+        // order. Sorting by priority alone put a later section (e.g. pages
+        // 5-18) above an earlier one (pages 4-4) just for being longer.
+        const orderKey = (value) => (value == null ? Number.MAX_SAFE_INTEGER : Number(value));
+        shaped.sort((a, b) => {
+            const aScheduled = a.session_date != null;
+            const bScheduled = b.session_date != null;
+            if (aScheduled !== bScheduled) return aScheduled ? -1 : 1;
+            if (aScheduled) {
+                const byDate = a.session_date.localeCompare(b.session_date);
+                if (byDate !== 0) return byDate;
+                const byTime = String(a.session_start_time).localeCompare(String(b.session_start_time));
+                if (byTime !== 0) return byTime;
+            } else {
+                if (a.course_id !== b.course_id) return orderKey(a.course_id) - orderKey(b.course_id);
+                if (a.material_id !== b.material_id) return orderKey(a.material_id) - orderKey(b.material_id);
+            }
+            return (orderKey(a.start_page) - orderKey(b.start_page)) || (a.id - b.id);
+        });
+
         res.json({ success: true, tasks: shaped });
     } catch (error) {
         console.error('List tasks error:', error);
