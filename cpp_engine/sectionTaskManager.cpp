@@ -1,18 +1,14 @@
 // ============================================================
 //  StudyGPS - cpp_engine/sectionTaskManager.cpp
 //
-//  Turns the sections detected from a PDF (title, page range,
-//  estimated minutes, difficulty) into StudyGPS tasks
-//  (priority + status), following the same "engine as a small
-//  CLI filter" pattern as studyTracker.cpp / progressReport.cpp:
-//  no DB/JSON code in here, Node.js (materials.js) owns I/O.
+//  Turns detected PDF sections (title, page range, estimated minutes,
+//  difficulty) into StudyGPS tasks (priority + status). No DB/JSON code
+//  here - Node.js (materials.js) owns I/O.
 //
 //  Input  (stdin, one section per line, pipe-delimited):
 //      section_id|title|start_page|end_page|estimated_minutes|difficulty
 //
-//  Output (stdout, one task per line, same key=value shape
-//  studyTracker.cpp already prints, so the existing Node-side
-//  regex-parsing convention just works):
+//  Output (stdout, one task per line, key=value):
 //      section_id=<id> priority=<n> status=Not Started
 //
 //  Build:
@@ -97,12 +93,9 @@ static bool parseSectionLine(const std::string& rawLine, SectionInput& out) {
 // Section -> Task processing
 // ---------------------------------------------------------------------
 //
-// Priority combines two signals so that longer AND harder sections
-// naturally rise to the top of a task list (the actual date/deadline
-// scheduling is scheduler.cpp's job, not this file's):
-//   - difficulty (1-5 expected, but not enforced) weighted heavily
-//   - page count, capped so one very long section can't dominate
-//     every other section's priority
+// Priority = difficulty (weighted heavily) + capped page count, so
+// longer/harder sections rise to the top. Deadline scheduling is
+// scheduler.cpp's job, not this file's.
 
 class SectionTaskManager {
 public:

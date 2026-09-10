@@ -369,25 +369,15 @@ public:
 // Main - real stdin/stdout CLI
 // ---------------------------------------------------------
 //
-// Was previously a hardcoded demo dataset (the exact numbers that were
-// showing up baked into frontend/progress.html's markup - this program
-// was never actually wired to Node at all). Rewritten the same way
-// scheduler.cpp's main() was: read real, per-task records from stdin and
-// print a machine-parseable report, while every calculation above
-// (ProgressReport, CourseProgress, TaskProgress, formatPercentage) is
-// completely untouched.
-//
-// Input (stdin), one real task per line:
+// Input (stdin), one task per line:
 //   TASK|<task name>|<course name>|<status>|<plannedMinutes>|<actualMinutes>
-// <status> is exactly one of the three strings the app's `tasks.status`
-// column already uses: "Not Started" | "In Progress" | "Completed".
+// status: "Not Started" | "In Progress" | "Completed"
 //
-// Output (stdout), key=value pairs so Node can regex-parse them:
+// Output (stdout), key=value pairs:
 //   REPORT tasks_completed=<n> tasks_total=<n> completion_rate=<pct>
 //          study_minutes=<n> schedule_adherence=<pct>
 //   COURSE total=<n> completed=<n> percentage=<pct> name=<course name>
-//   (one COURSE line per distinct course, in first-seen order; <name> runs
-//   to end of line since course names can contain spaces)
+//   (one COURSE line per distinct course; name runs to end of line)
 //
 // Example:
 //   printf "TASK|Sets Homework|Discrete Mathematics|Completed|60|50\n" | ./progressReport

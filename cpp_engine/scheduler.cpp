@@ -1,16 +1,10 @@
 // scheduler.cpp
 //
 // Generates a study schedule from a set of tasks and a set of available
-// time windows. No UI / database code here on purpose — this is the raw
-// scheduling algorithm, exercised against sample data via main().
+// time windows. No UI / database code here — pure scheduling algorithm.
 //
-// NOTE on dates: real deadlines ("August 29") and real calendar days
-// ("Monday") need a calendar to compare against "today". To keep this
-// module self-contained, both tasks and time slots carry a small integer
-// `dayIndex` = "how many days from today" (0 = today/soonest day, 1 =
-// tomorrow, etc). Converting an actual calendar date into that index is a
-// one-line job for whoever wires this up to a real calendar/date library
-// later — it's deliberately kept out of the scheduling algorithm itself.
+// dayIndex = days from today (0 = today, 1 = tomorrow, ...). Callers
+// convert real calendar dates into this before calling in.
 
 #include <algorithm>
 #include <cmath>
@@ -38,13 +32,8 @@ struct Task {
     int startPage = -1;
     int endPage = -1;
 
-    // Which PDF/material this task's section came from (empty string if
-    // none, e.g. a manually-added personal task). Two tasks from the SAME
-    // material must never be scheduled out of page order - a reader can't
-    // sensibly study pages 20-45 of a chapter before pages 1-19 of the
-    // same chapter, no matter how the priority/urgency/difficulty score
-    // comes out. materialId is what lets prioritizeTasks() recognize
-    // "these two belong to the same reading" and enforce that.
+    // Which PDF/material this task's section came from (empty if none).
+    // Lets prioritizeTasks() keep same-material tasks in page order.
     std::string materialId;
 
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
@@ -115,6 +104,17 @@ public:
         std::vector<TimeSlot> remainingSlots = availableSlots_;
         std::map<int, int> dailyUsedMinutes; // dayIndex -> minutes used so far
 
+        // Minutes placed in each slot since the last break was taken there.
+        // A "study session" is the user's preferred block length (e.g. 50
+        // min), not "however much one task happens to need" - a task
+        // estimated at only 5-6 minutes (e.g. a short PDF section) must be
+        // packed back-to-back with the next task(s) in the same slot, with
+        // no break between them, until a full session's worth of study time
+        // has accumulated. Only then is a break inserted. Without this, a
+        // break was previously added after every single task regardless of
+        // size, turning tiny tasks into their own isolated tiny "sessions".
+        std::vector<int> blockMinutesSinceBreak(remainingSlots.size(), 0);
+
         for (const Task& task : ordered) {
             std::vector<int> chunks = splitTask(task.estimatedMinutes, config_.sessionLengthMinutes);
 
@@ -156,11 +156,19 @@ public:
                     task, slot, chunkMinutes, chunkStartPage, chunkEndPage, i + 1, totalParts);
                 schedule.push_back(session);
 
-                // Consume the time (and the following break) from the slot.
+                // Consume the time from the slot, and only take a break once
+                // a full session's worth of study time has accumulated in
+                // this block - not after every individual task/chunk. That
+                // keeps small tasks packed into one properly-sized session
+                // instead of each becoming its own tiny session-and-break.
                 dailyUsedMinutes[slot.dayIndex] += chunkMinutes;
                 slot.startMinutes += chunkMinutes;
-                if (slot.startMinutes + config_.breakLengthMinutes <= slot.endMinutes) {
+                blockMinutesSinceBreak[slotIdx] += chunkMinutes;
+
+                if (blockMinutesSinceBreak[slotIdx] >= config_.sessionLengthMinutes &&
+                    slot.startMinutes + config_.breakLengthMinutes <= slot.endMinutes) {
                     slot.startMinutes += config_.breakLengthMinutes;
+                    blockMinutesSinceBreak[slotIdx] = 0;
                 }
             }
         }
@@ -169,11 +177,8 @@ public:
     }
 
     // -------------------------------------------------------------
-    // 2. Sort tasks by priority, urgency (deadline), and difficulty -
-    //    UNLESS two tasks come from the same material, in which case
-    //    natural page order always wins (you can't sensibly schedule
-    //    pages 20-45 before pages 1-19 of the same reading, regardless
-    //    of which one scores higher on difficulty/urgency).
+    // 2. Sort by priority/urgency/difficulty, except same-material tasks
+    //    always stay in page order.
     // -------------------------------------------------------------
     std::vector<Task> prioritizeTasks(std::vector<Task> tasksToSort) const {
         std::sort(tasksToSort.begin(), tasksToSort.end(),
@@ -186,10 +191,8 @@ public:
         return tasksToSort;
     }
 
-    // Two tasks are "the same material" only when both carry a real,
-    // matching, non-empty materialId AND both have a real page range -
-    // otherwise (personal tasks, tasks with no material) fall back to
-    // ordinary score-based ordering.
+    // Same material only when both have a matching, non-empty materialId
+    // and a real page range; otherwise falls back to score-based ordering.
     bool sameMaterial(const Task& a, const Task& b) const {
         return !a.materialId.empty() &&
                a.materialId == b.materialId &&
@@ -224,16 +227,48 @@ public:
 
     // -------------------------------------------------------------
     // 5. Split a task's total time into session-length chunks
+    //
+    // A plain totalMinutes/sessionLength split leaves a ragged last
+    // chunk (e.g. a 105-minute task at a 50-minute session length
+    // becomes 50/50/5) - that stray few-minute "session" is not a
+    // useful study block. Instead, fold a too-small leftover into the
+    // previous full chunk so every session is a reasonable length.
     // -------------------------------------------------------------
     std::vector<int> splitTask(int totalMinutes, int sessionLengthMinutes) const {
         std::vector<int> chunks;
-        int remaining = totalMinutes;
-        while (remaining > 0) {
-            int chunk = std::min(sessionLengthMinutes, remaining);
-            chunks.push_back(chunk);
-            remaining -= chunk;
+        if (totalMinutes <= 0) {
+            chunks.push_back(0); // defensive: zero-length task
+            return chunks;
         }
-        if (chunks.empty()) chunks.push_back(0); // defensive: zero-length task
+        if (sessionLengthMinutes <= 0) {
+            chunks.push_back(totalMinutes);
+            return chunks;
+        }
+
+        int fullSessions = totalMinutes / sessionLengthMinutes;
+        int remainder = totalMinutes % sessionLengthMinutes;
+
+        if (fullSessions == 0) {
+            // Task shorter than one session - one chunk for the whole task.
+            chunks.push_back(totalMinutes);
+            return chunks;
+        }
+        if (remainder == 0) {
+            chunks.assign(fullSessions, sessionLengthMinutes);
+            return chunks;
+        }
+
+        // Leftover shorter than this isn't worth its own session; merge it
+        // into the last full chunk instead of scheduling a separate 5-min
+        // block. Threshold is half the session length (capped at 15 min).
+        const int kMinSessionMinutes = std::min(15, sessionLengthMinutes / 2);
+
+        chunks.assign(fullSessions, sessionLengthMinutes);
+        if (remainder < kMinSessionMinutes) {
+            chunks.back() += remainder;
+        } else {
+            chunks.push_back(remainder);
+        }
         return chunks;
     }
 
@@ -285,26 +320,17 @@ private:
 // sectionTaskManager.cpp / studyTracker.cpp: no DB/JSON code here,
 // Node.js (backend/routes/schedule.js) owns all I/O and just pipes
 // real task/time-slot rows in and reads scheduled sessions back out.
-// The algorithm above (Scheduler, taskScore, splitTask, ...) is
-// untouched - only this entry point changed.
 //
-// Input (stdin, one record per line, pipe-delimited, prefixed by
-// record type so config/tasks/slots can arrive in any order):
+// Input (stdin, one record per line, pipe-delimited; any order):
 //   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
 //   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId
 //   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
-// materialId may be an empty field (i.e. two consecutive pipes) for a
-// task with no source material (e.g. a manually-added personal task).
+// materialId may be empty (two consecutive pipes).
 //
-// Output (stdout, one scheduled session per line, key=value - same
-// convention studyTracker.cpp/sectionTaskManager.cpp already use):
+// Output (stdout, one scheduled session per line, key=value):
 //   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
 //   end_minutes=<n> start_page=<n> end_page=<n> part=<n> total_parts=<n>
-// Anything that couldn't be scheduled is reported as:
-//   warning=<task could not find room for N more minute(s)...>
-// (Node only regex-matches the fields it needs, so extra/warning lines
-// that don't match the "task_id=..." shape are simply ignored - same
-// tolerant-parsing convention as the other two engines.)
+// Unscheduled tasks are reported as: warning=<message>
 //
 // Build:
 //   g++ -std=c++17 -O2 -o scheduler cpp_engine/scheduler.cpp
