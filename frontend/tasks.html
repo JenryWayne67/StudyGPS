@@ -238,6 +238,7 @@
       </div>
       <div id="fsTimerPane" class="w-full lg:w-80 flex-shrink-0 max-h-[45vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-slate-200 p-5 overflow-y-auto">
         <div id="fsTimerPanel" class="max-w-sm mx-auto"><!-- Populated via renderFullscreenTimerPanel() --></div>
+        <div id="fsSections" class="max-w-sm mx-auto mt-6"><!-- Populated via renderFullscreenSections() --></div>
       </div>
     </div>
   </div>
@@ -451,10 +452,11 @@
     function renderFullscreenTimerPanel() {
       const panel = document.getElementById('fsTimerPanel');
       if (!panel || fullscreenTaskId == null) return;
+      renderFullscreenSections();
 
       const task = allTasksCache.find(t => Number(t.id) === fullscreenTaskId);
       const group = fullscreenSessionKey ? sessionGroupsByKey.get(fullscreenSessionKey) : null;
-      const isDone = group ? group.items.every(t => t.status === 'Completed') : (task && task.status === 'Completed');
+      const isDone = group ? group.items.every(isItemDone) : (task && isItemDone(task));
       const isCurrentActive = isTimerActive && (group
         ? activeOccurrenceKey === fullscreenSessionKey
         : Number(fullscreenTaskId) === Number(activeTaskId));
@@ -785,7 +787,10 @@
               planned_minutes: entry.planned,
               actual_seconds: entry.seconds,
               end_time: new Date().toISOString(),
-              completed: finishesTask(entry.task)
+              completed: finishesTask(entry.task),
+              // Marks this scheduled session as done, so every section in
+              // it shows ticked - including one that continues later.
+              schedule_id: entry.task.schedule_id
             })
           });
         }
@@ -860,6 +865,74 @@
       return weights.map((w) => w / total);
     }
 
+    // A section counts as done in a session when the task is Completed, or
+    // when that scheduled session itself was finished (a section that
+    // continues in a later session is done here but still open there).
+    function isItemDone(task) {
+      return task.status === 'Completed' || Boolean(task.session_completed);
+    }
+
+    // "Pages 5-15 · part 1 of 2" - plus a note when this session is done but
+    // the section carries on in its next session.
+    function sectionDetail(task) {
+      const part = task.session_parts > 1 ? ` · part ${task.session_part} of ${task.session_parts}` : '';
+      const continues = task.status !== 'Completed' && task.session_completed && !finishesTask(task) ? ' · continues next session' : '';
+      return `${task.pages}${part}${continues}`;
+    }
+
+    // Checkbox next to a section (session card or full screen): mark the
+    // whole section complete, or reopen it, without running a timer.
+    async function toggleSectionComplete(taskId, completed) {
+      const data = await fetchJSON(`/api/tasks/${taskId}/complete`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed })
+      });
+      if (!data || data.success === false) {
+        alert((data && data.error) || 'Could not update this section. Please try again.');
+      }
+      await loadTasks();
+      renderTasks();
+      renderFullscreenTimerPanel();
+    }
+
+    // Under the full screen timer: the sections of the session being
+    // studied, each with a checkbox to mark it complete. Clicking a
+    // section's name opens the PDF at its pages.
+    function renderFullscreenSections() {
+      const box = document.getElementById('fsSections');
+      if (!box) return;
+      const group = fullscreenSessionKey ? sessionGroupsByKey.get(fullscreenSessionKey) : null;
+      const items = group ? group.items : allTasksCache.filter(t => Number(t.id) === fullscreenTaskId).slice(0, 1);
+      if (fullscreenTaskId == null || items.length === 0) {
+        box.innerHTML = '';
+        return;
+      }
+      box.innerHTML = `
+        <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">${items.length > 1 ? 'Sections in this session' : 'Section'}</p>
+        <div class="rounded-xl border border-slate-200 divide-y divide-slate-100">
+          ${items.map(t => `
+            <div class="flex items-start gap-2.5 px-3 py-2">
+              <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked)" title="Mark this section complete">
+              <button type="button" onclick="showFullscreenPage(${t.material_id || 'null'}, ${t.session_start_page ?? t.start_page ?? 'null'})" title="${t.material_id ? 'Open the PDF at this section' : ''}" class="min-w-0 text-left ${t.material_id ? 'hover:text-blue-600' : 'cursor-default'}">
+                <span class="block text-xs font-semibold ${isItemDone(t) ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
+                <span class="block text-[11px] text-slate-400 font-medium">${sectionDetail(t)}</span>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Jump the full screen PDF to a section's first page. The ?p= query
+    // (ignored by the server) makes the browser reload the viewer so it
+    // actually moves to the new #page.
+    function showFullscreenPage(materialId, page) {
+      if (!materialId) return;
+      document.getElementById('fsPdfFrame').src =
+        `/api/materials/${materialId}/file${page ? `?p=${page}#page=${page}` : ''}`;
+    }
+
     // Does finishing this session finish the task? Not when the task
     // continues in a later scheduled session (e.g. part 1 of 2).
     function finishesTask(task) {
@@ -872,7 +945,7 @@
     function startSessionTimer(key, autoStart = true) {
       const group = sessionGroupsByKey.get(key);
       if (!group) return;
-      const pending = group.items.filter(t => t.status !== 'Completed');
+      const pending = group.items.filter(t => !isItemDone(t));
       if (pending.length === 0) return;
       const shares = sessionShares(pending);
       startTaskTimer(pending[0].id, autoStart, pending[0].session_minutes, key);
@@ -965,7 +1038,7 @@
       document.getElementById('upcomingCountBadge').textContent = `${upcomingGroups.length} tasks`;
 
       const createCard = (task) => {
-        const isDone = task.status === 'Completed';
+        const isDone = isItemDone(task);
         const cardKey = occKey(task);
         const isCurrentActive = isTimerActive && cardKey === activeOccurrenceKey;
 
@@ -1050,8 +1123,8 @@
       const createSessionCard = (group) => {
         const items = group.items;
         const first = items[0];
-        const allDone = items.every(t => t.status === 'Completed');
-        const next = items.find(t => t.status !== 'Completed') || first;
+        const allDone = items.every(isItemDone);
+        const next = items.find(t => !isItemDone(t)) || first;
         const isCurrentActive = isTimerActive && group.key === activeOccurrenceKey;
         const pages = sessionPagesLabel(items);
         const openAtPage = next.session_start_page ?? next.start_page;
@@ -1107,10 +1180,13 @@
             <div class="rounded-xl border border-slate-100 divide-y divide-slate-100">
               ${items.map(t => `
                 <div class="flex items-center justify-between gap-3 px-3 py-2">
-                  <div class="min-w-0">
-                    <p class="text-xs font-semibold ${t.status === 'Completed' ? 'line-through text-slate-400' : 'text-slate-800'}">${t.status === 'Completed' ? '✓ ' : ''}${t.title}</p>
-                    <p class="text-[11px] text-slate-400 font-medium">${t.pages}${t.session_parts > 1 ? ` · part ${t.session_part} of ${t.session_parts}` : ''}</p>
-                  </div>
+                  <label class="flex items-start gap-2.5 min-w-0 cursor-pointer">
+                    <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked)" title="Mark this section complete">
+                    <span class="min-w-0">
+                      <span class="block text-xs font-semibold ${isItemDone(t) ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
+                      <span class="block text-[11px] text-slate-400 font-medium">${sectionDetail(t)}</span>
+                    </span>
+                  </label>
                   <button type="button" onclick="openEditTaskModal(${t.id})" title="Edit task" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                     ✏️ Edit
                   </button>

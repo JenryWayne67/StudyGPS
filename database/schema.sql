@@ -125,6 +125,7 @@ CREATE TABLE schedules (
     start_page INTEGER,
     end_page INTEGER,
     reminder_sent INTEGER DEFAULT 0, -- dedup flag for the email-reminder background check in server.js
+    completed INTEGER DEFAULT 0, -- 1 once this scheduled session was finished (Complete Session / ticking its section on Tasks)
     FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 

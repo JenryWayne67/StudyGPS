@@ -150,7 +150,7 @@ router.get('/', async (req, res) => {
         if (taskIds.length > 0) {
             const placeholders = taskIds.map(() => '?').join(',');
             const scheduleRows = await db.prepare(`
-                SELECT id, task_id, date, start_time, end_time, start_page, end_page
+                SELECT id, task_id, date, start_time, end_time, start_page, end_page, completed
                 FROM schedules
                 WHERE task_id IN (${placeholders})
                 ORDER BY date ASC, start_time ASC
@@ -205,7 +205,8 @@ router.get('/', async (req, res) => {
                     session_start_page: startPage,
                     session_end_page: endPage,
                     session_part: index + 1,
-                    session_parts: sessions.length
+                    session_parts: sessions.length,
+                    session_completed: Boolean(sch.completed)
                 });
             }
         }
@@ -425,6 +426,51 @@ router.put('/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Update task error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// PATCH /api/tasks/:id/complete
+// Tick/untick a section as done straight from the Tasks page (the
+// checkboxes on a session card and in full screen), without running a
+// timer. Ticking completes the task and every scheduled session of it;
+// unticking reopens them - back to In Progress if any study time was
+// logged against it, otherwise Not Started.
+// ==========================================
+router.patch('/:id/complete', async (req, res) => {
+    try {
+        const taskId = Number(req.params.id);
+        if (!taskId) {
+            return res.status(400).json({ success: false, error: 'Invalid task ID' });
+        }
+
+        const task = await db.prepare(`
+            SELECT t.id, c.user_id AS owner_user_id
+            FROM tasks t
+            JOIN sections s ON s.id = t.section_id
+            LEFT JOIN courses c ON c.id = s.course_id
+            WHERE t.id = ?
+        `).get(taskId);
+
+        // Same 404 whether the task doesn't exist or just isn't this user's.
+        if (!task || task.owner_user_id !== req.user.id) {
+            return res.status(404).json({ success: false, error: `Task ${taskId} does not exist` });
+        }
+
+        const completed = Boolean(req.body && req.body.completed);
+        let status = 'Completed';
+        if (!completed) {
+            const logged = await db.prepare(`SELECT COUNT(*) AS n FROM study_sessions WHERE task_id = ?`).get(taskId);
+            status = logged && Number(logged.n) > 0 ? 'In Progress' : 'Not Started';
+        }
+
+        await db.prepare(`UPDATE tasks SET status = ? WHERE id = ?`).run(status, taskId);
+        await db.prepare(`UPDATE schedules SET completed = ? WHERE task_id = ?`).run(completed ? 1 : 0, taskId);
+
+        res.json({ success: true, task: { id: taskId, status } });
+    } catch (error) {
+        console.error('Complete task error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

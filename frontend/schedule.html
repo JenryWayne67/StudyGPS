@@ -789,7 +789,7 @@
                   </div>
                   <a href="tasks.html?task_id=${(s.items.find(i => i.task_status !== 'Completed') || s).task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
                     <div>
-                      ${s.items.map(i => `<h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${i.title}</h4>`).join('')}
+                      <h4 class="text-xs font-bold text-slate-900 group-hover:text-blue-600 leading-snug transition">${s.material_name ? s.material_name.replace(/\.pdf$/i, '') : s.items.map(i => i.title).join(' + ')}</h4>
                       <p class="text-[10px] font-medium text-slate-500 mt-0.5 line-clamp-1 flex items-center gap-1">
                         <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${courseColor(s)}"></span>
                         ${s.course_name || ''}

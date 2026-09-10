@@ -395,6 +395,7 @@ router.get('/', async (req, res) => {
                 sch.end_page,
                 s.title,
                 s.material_id,
+                m.filename AS material_name,
                 c.id AS course_id,
                 c.name AS course_name,
                 c.color AS course_color,
@@ -404,6 +405,7 @@ router.get('/', async (req, res) => {
             JOIN tasks t ON t.id = sch.task_id
             JOIN sections s ON s.id = t.section_id
             JOIN courses c ON c.id = s.course_id
+            LEFT JOIN materials m ON m.id = s.material_id
             WHERE c.user_id = ?
             ORDER BY sch.date ASC, sch.start_time ASC, sch.id ASC
         `).all(req.user.id);

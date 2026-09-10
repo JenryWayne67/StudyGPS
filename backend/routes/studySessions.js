@@ -25,6 +25,7 @@ router.post('/', async (req, res) => {
     try {
         const {
             task_id,
+            schedule_id,
             planned_minutes,
             actual_seconds,
             start_time,
@@ -157,6 +158,15 @@ router.post('/', async (req, res) => {
                         SET status = ?
                         WHERE id = ? AND status != 'Completed'
                     `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
+
+                    // Mark the scheduled session this was studied in as done,
+                    // so it shows finished on Tasks even when the section
+                    // continues in a later session (task still In Progress).
+                    if (schedule_id) {
+                        await db.prepare(`
+                            UPDATE schedules SET completed = 1 WHERE id = ? AND task_id = ?
+                        `).run(Number(schedule_id), cppTaskId);
+                    }
 
                     const newSession = await db.prepare(`
                         SELECT *

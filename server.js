@@ -118,6 +118,14 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added schedules.reminder_sent column.');
   }
 
+  // 1 once the user finished this scheduled session (Complete Session on
+  // Tasks, or ticking its section) - lets a session show as done even when
+  // one of its sections continues in a later session.
+  if (!scheduleColumnNames.includes('completed')) {
+    await client.execute(`ALTER TABLE schedules ADD COLUMN completed INTEGER DEFAULT 0`);
+    console.log('Migrated: added schedules.completed column.');
+  }
+
   const sectionCols = await client.execute(`PRAGMA table_info(sections)`);
   const sectionColumnNames = sectionCols.rows.map((r) => r.name);
 
