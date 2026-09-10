@@ -118,6 +118,17 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added schedules.reminder_sent column.');
   }
 
+  const sectionCols = await client.execute(`PRAGMA table_info(sections)`);
+  const sectionColumnNames = sectionCols.rows.map((r) => r.name);
+
+  // 1 when the user typed this section's duration themselves (Add Task, or
+  // editing its minutes on the Tasks page) - the scheduler then keeps that
+  // exact time instead of rounding it to whole sessions.
+  if (!sectionColumnNames.includes('minutes_customized')) {
+    await client.execute(`ALTER TABLE sections ADD COLUMN minutes_customized INTEGER DEFAULT 0`);
+    console.log('Migrated: added sections.minutes_customized column.');
+  }
+
   const courseCols = await client.execute(`PRAGMA table_info(courses)`);
   const courseColumnNames = courseCols.rows.map((r) => r.name);
 

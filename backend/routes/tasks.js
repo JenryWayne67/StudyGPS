@@ -68,8 +68,8 @@ router.post('/', async (req, res) => {
         const courseId = await ensurePersonalCourseId(userId);
 
         const sectionInfo = await db.prepare(`
-            INSERT INTO sections (course_id, title, start_page, end_page, estimated_minutes, difficulty, material_id)
-            VALUES (?, ?, NULL, NULL, ?, 1, NULL)
+            INSERT INTO sections (course_id, title, start_page, end_page, estimated_minutes, difficulty, material_id, minutes_customized)
+            VALUES (?, ?, NULL, NULL, ?, 1, NULL, 1)
         `).run(courseId, title, estimatedMinutes);
 
         const taskInfo = await db.prepare(`
@@ -392,9 +392,18 @@ router.put('/:id', async (req, res) => {
 
         const deadline = body.deadline !== undefined ? (body.deadline ? String(body.deadline) : null) : task.deadline;
 
+        // Changing the minutes marks the duration as the user's own, so the
+        // scheduler keeps it exact instead of rounding it to whole sessions.
+        // (The Edit form always sends the minutes, so only an actual change
+        // counts - renaming a task doesn't.)
+        const minutesChanged = body.estimated_minutes !== undefined && estimatedMinutes !== Number(task.estimated_minutes);
+
         await db.prepare(`
-            UPDATE sections SET title = ?, estimated_minutes = ?, difficulty = ? WHERE id = ?
-        `).run(title, estimatedMinutes, difficulty, task.section_id);
+            UPDATE sections
+            SET title = ?, estimated_minutes = ?, difficulty = ?,
+                minutes_customized = CASE WHEN ? = 1 THEN 1 ELSE minutes_customized END
+            WHERE id = ?
+        `).run(title, estimatedMinutes, difficulty, minutesChanged ? 1 : 0, task.section_id);
 
         await db.prepare(`
             UPDATE tasks SET priority = ?, deadline = ? WHERE id = ?

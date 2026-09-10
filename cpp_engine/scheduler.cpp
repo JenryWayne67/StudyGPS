@@ -18,6 +18,11 @@
 //     individual sections' priorities are.
 // A session never mixes two different materials. Tasks without a page
 // range or material (e.g. custom tasks) are streams of their own.
+//
+// Exception: when the user typed a duration themselves (a custom task, or
+// a section whose minutes they edited), that stream keeps its exact total
+// minutes - full-length sessions, then one shorter final session for the
+// remainder - instead of being rounded to whole sessions.
 
 #include <algorithm>
 #include <iostream>
@@ -47,6 +52,11 @@ struct Task {
     // Which PDF/material this task's section came from (empty if none).
     // Tasks sharing a materialId are scheduled as one page-ordered stream.
     std::string materialId;
+
+    // True when the user set this task's duration themselves. A stream
+    // containing one keeps its exact total minutes - see
+    // planStreamSessions().
+    bool exactMinutes = false;
 
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
     int pageCount() const { return hasPages() ? (endPage - startPage + 1) : 0; }
@@ -126,6 +136,9 @@ public:
         std::vector<std::vector<PlannedSession>> streamSessions;
         for (const std::vector<int>& stream : buildStreams()) {
             streamSessions.push_back(planStreamSessions(stream, sessionLength));
+            for (PlannedSession& session : streamSessions.back()) {
+                session.stream = static_cast<int>(streamSessions.size()) - 1;
+            }
         }
         std::vector<PlannedSession> ordered = mergeStreams(streamSessions);
 
@@ -133,23 +146,33 @@ public:
         std::vector<TimeSlot> remainingSlots = availableSlots_;
         std::map<int, int> dailyUsedMinutes; // dayIndex -> minutes used so far
 
-        // Every session is the same length and always goes into the
-        // earliest slot with room, so sessions land in chronological order
-        // exactly as `ordered` lists them - which is what keeps a
-        // material's pages in order on the calendar. (Once one session
-        // doesn't fit anywhere, no later one can either.)
+        // Sessions land on the calendar strictly in `ordered` order: each
+        // goes into the earliest slot with room that starts no earlier than
+        // where the previous session ended. Sessions aren't all the same
+        // length (a custom task's shorter last session), so "earliest slot
+        // with room" alone could drop a short session into a gap before a
+        // longer one placed earlier - putting pages out of order. And once
+        // a session can't be placed, the rest of its stream is skipped too,
+        // so later pages never get scheduled ahead of missing ones.
+        int minDay = std::numeric_limits<int>::min();
+        int minStart = 0;
+        std::vector<bool> streamBlocked(streamSessions.size(), false);
+
         for (const PlannedSession& planned : ordered) {
-            int slotIdx = findAvailableSlot(remainingSlots, dailyUsedMinutes, sessionLength);
+            int slotIdx = streamBlocked[planned.stream]
+                ? -1
+                : findAvailableSlot(remainingSlots, dailyUsedMinutes, planned.minutes, minDay, minStart);
             if (slotIdx == -1) {
+                streamBlocked[planned.stream] = true;
                 unscheduledWarnings_.push_back(
-                    "Could not find room for a " + std::to_string(sessionLength) +
+                    "Could not find room for a " + std::to_string(planned.minutes) +
                     "-minute session covering " + describeSession(planned));
                 continue;
             }
 
             TimeSlot& slot = remainingSlots[slotIdx];
             for (const SessionPiece& piece : planned.pieces) {
-                schedule.push_back(createSchedule(tasks_[piece.taskIdx], slot, sessionLength,
+                schedule.push_back(createSchedule(tasks_[piece.taskIdx], slot, planned.minutes,
                                                   piece.startPage, piece.endPage,
                                                   piece.partNumber, piece.totalParts));
             }
@@ -157,8 +180,10 @@ public:
             // Consume the session and the break after it. A break that
             // doesn't fit closes the slot rather than letting the next
             // session start with no break at all.
-            dailyUsedMinutes[slot.dayIndex] += sessionLength;
-            slot.startMinutes += sessionLength;
+            minDay = slot.dayIndex;
+            minStart = slot.startMinutes + planned.minutes;
+            dailyUsedMinutes[slot.dayIndex] += planned.minutes;
+            slot.startMinutes += planned.minutes;
             slot.startMinutes = std::min(slot.startMinutes + config_.breakLengthMinutes, slot.endMinutes);
         }
 
@@ -177,9 +202,11 @@ private:
         int totalParts = 1;
     };
 
-    // One session-length block of study, before it's given a time slot.
+    // One block of study, before it's given a time slot.
     struct PlannedSession {
         std::vector<SessionPiece> pieces;  // in page order
+        int minutes = 0;                   // session length (shorter only for an exact stream's last one)
+        int stream = 0;                    // which stream it came from
         double score = 0;                  // highest taskScore among its tasks
     };
 
@@ -218,50 +245,84 @@ private:
     }
 
     // -------------------------------------------------------------
-    // 3. Cut one stream into sessions of exactly `sessionLength` minutes.
+    // 3. Cut one stream into sessions.
     //
-    // The stream's total estimated time T becomes round(T / sessionLength)
+    // Normally every session is exactly `sessionLength` minutes: the
+    // stream's total estimated time T becomes round(T / sessionLength)
     // sessions (at least one), and the reading is spread evenly across
-    // them: session k covers stream minutes [k*T/n, (k+1)*T/n). Each
-    // task's pages are split in proportion to its minutes, so every page
-    // lands in exactly one session and pages never go backwards.
+    // them - session k covers stream minutes [k*T/n, (k+1)*T/n).
     //
-    // Positions are kept in units of 1/n minute so all the boundaries are
-    // exact integers (no floating-point drift between sessions).
+    // If the user set any duration in the stream themselves, T is kept
+    // exactly instead: ceil(T / sessionLength) sessions, all full length
+    // except the last, which gets the remainder (70 min -> 50 + 20).
+    //
+    // Either way each task's pages are split in proportion to its minutes,
+    // so every page lands in exactly one session and pages never go
+    // backwards. Positions are kept in units of 1/scale minute so all the
+    // boundaries are exact integers (no floating-point drift).
     // -------------------------------------------------------------
     std::vector<PlannedSession> planStreamSessions(const std::vector<int>& stream, int sessionLength) const {
-        std::vector<long long> taskStart, taskLength; // scaled
         long long total = 0;
-        for (int idx : stream) total += std::max(tasks_[idx].estimatedMinutes, 1);
+        bool exact = false;
+        for (int idx : stream) {
+            total += std::max(tasks_[idx].estimatedMinutes, 1);
+            exact = exact || tasks_[idx].exactMinutes;
+        }
 
-        long long n = std::max<long long>(1, (2 * total + sessionLength) / (2LL * sessionLength));
+        long long n, scale;
+        std::vector<long long> bounds; // session s covers [bounds[s], bounds[s+1]), scaled
+        if (exact) {
+            n = (total + sessionLength - 1) / sessionLength;
+            scale = 1;
+            for (long long s = 0; s <= n; ++s) bounds.push_back(std::min(s * sessionLength, total));
+        } else {
+            n = std::max<long long>(1, (2 * total + sessionLength) / (2LL * sessionLength));
+            scale = n;
+            for (long long s = 0; s <= n; ++s) bounds.push_back(s * total);
+        }
 
+        std::vector<long long> taskStart, taskLength; // scaled
         long long cursor = 0;
         for (int idx : stream) {
-            long long m = std::max(tasks_[idx].estimatedMinutes, 1) * n;
+            long long m = std::max(tasks_[idx].estimatedMinutes, 1) * scale;
             taskStart.push_back(cursor);
             taskLength.push_back(m);
             cursor += m;
         }
-        // Stream end == total * n; session s covers [s*total, (s+1)*total).
 
         std::vector<PlannedSession> sessions(static_cast<size_t>(n));
+        for (long long s = 0; s < n; ++s) {
+            sessions[static_cast<size_t>(s)].minutes =
+                exact ? static_cast<int>(bounds[s + 1] - bounds[s]) : sessionLength;
+        }
 
         for (size_t k = 0; k < stream.size(); ++k) {
             const Task& task = tasks_[stream[k]];
             long long begin = taskStart[k];
             long long end = begin + taskLength[k];
 
-            for (long long s = begin / total; s <= (end - 1) / total; ++s) {
-                long long lo = std::max(begin, s * total);
-                long long hi = std::min(end, (s + 1) * total);
+            for (long long s = 0; s < n; ++s) {
+                long long lo = std::max(begin, bounds[s]);
+                long long hi = std::min(end, bounds[s + 1]);
+                if (hi <= lo) continue;
 
                 SessionPiece piece;
                 piece.taskIdx = stream[k];
                 if (task.hasPages()) {
                     int from = pageOffsetAt(lo, begin, taskLength[k], task.pageCount());
                     int to = pageOffsetAt(hi, begin, taskLength[k], task.pageCount());
-                    if (to <= from) continue; // rounds to no whole page; neighbours cover it
+                    if (to <= from) {
+                        // Less than a whole page of this task falls in this
+                        // session. A rounding sliver is dropped (neighbours
+                        // cover the page), but real study time - e.g. a
+                        // 1-page section the user set to 90 minutes running
+                        // into a second session - stays listed, on the page
+                        // it's at.
+                        if (hi - lo < kMinPieceMinutes * scale) continue;
+                        from = static_cast<int>(std::min<long long>(
+                            (lo - begin) * task.pageCount() / taskLength[k], task.pageCount() - 1));
+                        to = from + 1;
+                    }
                     piece.startPage = task.startPage + from;
                     piece.endPage = task.startPage + to - 1;
                 }
@@ -276,7 +337,7 @@ private:
         for (long long s = 0; s < n; ++s) {
             PlannedSession& session = sessions[static_cast<size_t>(s)];
             if (!session.pieces.empty()) continue;
-            long long at = s * total;
+            long long at = bounds[s];
             size_t k = 0;
             while (k + 1 < stream.size() && taskStart[k] + taskLength[k] <= at) ++k;
             const Task& task = tasks_[stream[k]];
@@ -308,6 +369,10 @@ private:
         }
         return sessions;
     }
+
+    // Shortest share of a session (in minutes) that's listed for a task
+    // when it doesn't reach a whole new page.
+    static constexpr long long kMinPieceMinutes = 10;
 
     // Whole pages of a task completed by scaled stream position `at`
     // (rounded half up), for a task occupying [begin, begin + length).
@@ -352,13 +417,16 @@ private:
 
     // -------------------------------------------------------------
     // 5. Find the first available slot with room for `neededMinutes`
+    //    that starts no earlier than (minDay, minStart).
     //    Returns an index into `slots`, or -1 if none fits.
     // -------------------------------------------------------------
     int findAvailableSlot(const std::vector<TimeSlot>& slots,
                            const std::map<int, int>& dailyUsedMinutes,
-                           int neededMinutes) const {
+                           int neededMinutes, int minDay, int minStart) const {
         for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
             const TimeSlot& slot = slots[i];
+            if (slot.dayIndex < minDay || (slot.dayIndex == minDay && slot.startMinutes < minStart)) continue;
+
             int usedToday = 0;
             auto it = dailyUsedMinutes.find(slot.dayIndex);
             if (it != dailyUsedMinutes.end()) usedToday = it->second;
@@ -429,9 +497,10 @@ private:
 //
 // Input (stdin, one record per line, pipe-delimited; any order):
 //   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
-//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId
+//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId|exactMinutes
 //   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
-// materialId may be empty (two consecutive pipes).
+// materialId may be empty (two consecutive pipes). exactMinutes is 1 when
+// the user set the task's duration themselves (optional, default 0).
 //
 // Output (stdout, one line per task per session, key=value):
 //   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
@@ -497,6 +566,7 @@ int main() {
                 // materialId is optional (field 9) for backward compatibility
                 // with older callers/sample data that don't send it yet.
                 task.materialId = (fields.size() >= 10) ? fields[9] : "";
+                task.exactMinutes = (fields.size() >= 11) && fields[10] == "1";
                 tasks.push_back(task);
             } else if (fields[0] == "SLOT" && fields.size() >= 5) {
                 TimeSlot slot;

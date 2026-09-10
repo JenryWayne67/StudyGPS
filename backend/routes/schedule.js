@@ -206,7 +206,8 @@ async function getPendingTasks(userId) {
             s.end_page,
             s.estimated_minutes,
             s.difficulty,
-            s.material_id
+            s.material_id,
+            s.minutes_customized
         FROM tasks t
         JOIN sections s ON s.id = t.section_id
         JOIN courses c ON c.id = s.course_id
@@ -246,10 +247,15 @@ function runScheduler({ preferences, tasks, slots }) {
             task.start_page ?? -1,
             task.end_page ?? -1,
             // Same-material tasks (same PDF) must stay in page order - see
-            // sameMaterial()/prioritizeTasks() in scheduler.cpp. Empty
+            // buildStreams() in scheduler.cpp. Empty
             // string (not 0/null) so a task with no material never
             // "matches" another one that also has no material.
-            task.material_id != null ? task.material_id : ''
+            task.material_id != null ? task.material_id : '',
+            // 1 = the user set this duration themselves, so the engine keeps
+            // it exact (full sessions + a shorter last one) instead of
+            // rounding to whole sessions. Custom tasks (no material) always
+            // count, including ones created before minutes_customized existed.
+            (task.minutes_customized || task.material_id == null) ? 1 : 0
         ].join('|'));
     }
 

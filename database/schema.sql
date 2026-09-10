@@ -101,6 +101,7 @@ CREATE TABLE sections (
     estimated_minutes INTEGER,
     difficulty INTEGER DEFAULT 1,
     material_id INTEGER REFERENCES materials(id),
+    minutes_customized INTEGER DEFAULT 0, -- 1 when the user set estimated_minutes themselves; the scheduler then keeps it exact
     FOREIGN KEY (course_id) REFERENCES courses(id)
 );
 
