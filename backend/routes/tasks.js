@@ -179,7 +179,7 @@ router.get('/', async (req, res) => {
                 continue;
             }
 
-            for (const sch of sessions) {
+            for (const [index, sch] of sessions.entries()) {
                 // Prefer this specific chunk's own page range when the
                 // scheduler recorded one (a task split into parts covers a
                 // different sub-range per session); fall back to the
@@ -196,7 +196,16 @@ router.get('/', async (req, res) => {
                     session_date: sch.date,
                     session_start_time: sch.start_time,
                     session_end_time: sch.end_time,
-                    session_minutes: sessionDuration(sch.start_time, sch.end_time)
+                    session_minutes: sessionDuration(sch.start_time, sch.end_time),
+                    // This session's own page range, and which of the task's
+                    // sessions it is - tasks.html groups the sections sharing
+                    // one session into a single card and needs these to split
+                    // that session's time between them and to know whether a
+                    // section finishes in it or continues in a later one.
+                    session_start_page: startPage,
+                    session_end_page: endPage,
+                    session_part: index + 1,
+                    session_parts: sessions.length
                 });
             }
         }

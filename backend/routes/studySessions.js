@@ -119,7 +119,10 @@ router.post('/', async (req, res) => {
                 const cppTaskId = Number(resultMatch[1]);
                 const cppPlannedMinutes = Number(resultMatch[2]);
                 const cppActualMinutes = Number(resultMatch[3]);
-                const cppCompleted = Number(resultMatch[4]);
+                // The caller can say this session doesn't finish the task
+                // (a section that continues in a later scheduled session):
+                // it's still logged, and the task stays In Progress.
+                const cppCompleted = completed === false ? 0 : Number(resultMatch[4]);
 
                 try {
                     // Save result to SQLite
