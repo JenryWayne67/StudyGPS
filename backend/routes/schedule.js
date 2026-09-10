@@ -207,7 +207,8 @@ async function getPendingTasks(userId) {
             s.estimated_minutes,
             s.difficulty,
             s.material_id,
-            s.minutes_customized
+            s.minutes_customized,
+            s.course_id
         FROM tasks t
         JOIN sections s ON s.id = t.section_id
         JOIN courses c ON c.id = s.course_id
@@ -255,7 +256,10 @@ function runScheduler({ preferences, tasks, slots }) {
             // it exact (full sessions + a shorter last one) instead of
             // rounding to whole sessions. Custom tasks (no material) always
             // count, including ones created before minutes_customized existed.
-            (task.minutes_customized || task.material_id == null) ? 1 : 0
+            (task.minutes_customized || task.material_id == null) ? 1 : 0,
+            // A course's PDFs are scheduled one after another, in upload
+            // order - one lecture file finished before the next starts.
+            task.course_id != null ? task.course_id : ''
         ].join('|'));
     }
 

@@ -23,8 +23,13 @@
 // a section whose minutes they edited), that stream keeps its exact total
 // minutes - full-length sessions, then one shorter final session for the
 // remainder - instead of being rounded to whole sessions.
+//
+// Lecture files of the same course are studied one after another: a
+// course's next PDF (in upload order) only starts once every section of
+// the previous one has been scheduled.
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -57,6 +62,10 @@ struct Task {
     // containing one keeps its exact total minutes - see
     // planStreamSessions().
     bool exactMinutes = false;
+
+    // Course the task belongs to. All PDFs of one course are scheduled in
+    // sequence (one file finished before the next starts) - see buildChains().
+    std::string courseId;
 
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
     int pageCount() const { return hasPages() ? (endPage - startPage + 1) : 0; }
@@ -133,14 +142,19 @@ public:
                 std::to_string(config_.maxDailyMinutes) + " min) - no session can be scheduled");
         }
 
-        std::vector<std::vector<PlannedSession>> streamSessions;
-        for (const std::vector<int>& stream : buildStreams()) {
-            streamSessions.push_back(planStreamSessions(stream, sessionLength));
-            for (PlannedSession& session : streamSessions.back()) {
-                session.stream = static_cast<int>(streamSessions.size()) - 1;
+        // Each chain's sessions, in the order they must be studied.
+        std::vector<std::vector<int>> streams = buildStreams();
+        std::vector<std::vector<PlannedSession>> chainSessions;
+        for (const std::vector<int>& chain : buildChains(streams)) {
+            chainSessions.emplace_back();
+            for (int streamIdx : chain) {
+                for (PlannedSession& session : planStreamSessions(streams[streamIdx], sessionLength)) {
+                    session.chain = static_cast<int>(chainSessions.size()) - 1;
+                    chainSessions.back().push_back(std::move(session));
+                }
             }
         }
-        std::vector<PlannedSession> ordered = mergeStreams(streamSessions);
+        std::vector<PlannedSession> ordered = mergeChains(chainSessions);
 
         // Working copies we consume from as sessions get placed.
         std::vector<TimeSlot> remainingSlots = availableSlots_;
@@ -152,18 +166,19 @@ public:
         // length (a custom task's shorter last session), so "earliest slot
         // with room" alone could drop a short session into a gap before a
         // longer one placed earlier - putting pages out of order. And once
-        // a session can't be placed, the rest of its stream is skipped too,
-        // so later pages never get scheduled ahead of missing ones.
+        // a session can't be placed, the rest of its chain is skipped too,
+        // so later pages - or a course's next file - never get scheduled
+        // ahead of missing ones.
         int minDay = std::numeric_limits<int>::min();
         int minStart = 0;
-        std::vector<bool> streamBlocked(streamSessions.size(), false);
+        std::vector<bool> chainBlocked(chainSessions.size(), false);
 
         for (const PlannedSession& planned : ordered) {
-            int slotIdx = streamBlocked[planned.stream]
+            int slotIdx = chainBlocked[planned.chain]
                 ? -1
                 : findAvailableSlot(remainingSlots, dailyUsedMinutes, planned.minutes, minDay, minStart);
             if (slotIdx == -1) {
-                streamBlocked[planned.stream] = true;
+                chainBlocked[planned.chain] = true;
                 unscheduledWarnings_.push_back(
                     "Could not find room for a " + std::to_string(planned.minutes) +
                     "-minute session covering " + describeSession(planned));
@@ -206,7 +221,7 @@ private:
     struct PlannedSession {
         std::vector<SessionPiece> pieces;  // in page order
         int minutes = 0;                   // session length (shorter only for an exact stream's last one)
-        int stream = 0;                    // which stream it came from
+        int chain = 0;                     // which chain (course sequence) it belongs to
         double score = 0;                  // highest taskScore among its tasks
     };
 
@@ -242,6 +257,50 @@ private:
             });
         }
         return streams;
+    }
+
+    // -------------------------------------------------------------
+    // 2b. Group streams into chains that are studied one after another:
+    //    all PDFs of the same course, in upload order - a course's next
+    //    lecture file only starts once the previous one is finished. Any
+    //    other stream (e.g. a custom task) is a chain of its own. Chains
+    //    keep the input order of their first stream (the tie-breaker).
+    // -------------------------------------------------------------
+    std::vector<std::vector<int>> buildChains(const std::vector<std::vector<int>>& streams) const {
+        std::vector<std::vector<int>> chains;
+        std::map<std::string, size_t> chainByCourse;
+
+        for (int i = 0; i < static_cast<int>(streams.size()); ++i) {
+            const Task& first = tasks_[streams[i].front()];
+            if (first.materialId.empty() || !first.hasPages() || first.courseId.empty()) {
+                chains.push_back({i});
+                continue;
+            }
+            auto it = chainByCourse.find(first.courseId);
+            if (it == chainByCourse.end()) {
+                chainByCourse[first.courseId] = chains.size();
+                chains.push_back({i});
+            } else {
+                chains[it->second].push_back(i);
+            }
+        }
+
+        for (std::vector<int>& chain : chains) {
+            std::stable_sort(chain.begin(), chain.end(), [&](int a, int b) {
+                return materialLess(tasks_[streams[a].front()].materialId, tasks_[streams[b].front()].materialId);
+            });
+        }
+        return chains;
+    }
+
+    // Upload order of two materials. Their ids are database ids, so compare
+    // them as numbers when both are ("9" before "10").
+    static bool materialLess(const std::string& a, const std::string& b) {
+        auto isNumber = [](const std::string& s) {
+            return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+        };
+        if (isNumber(a) && isNumber(b) && a.size() != b.size()) return a.size() < b.size();
+        return a < b;
     }
 
     // -------------------------------------------------------------
@@ -381,36 +440,37 @@ private:
     }
 
     // -------------------------------------------------------------
-    // 4. Merge all streams into one session order: always take the
-    //    stream whose next session is most important, so urgent work goes
-    //    first while each stream's own sessions stay in page order. A
-    //    session counts as important as anything after it in its stream
-    //    (you can't reach an urgent later chapter without reading the
-    //    pages before it). Ties go to the stream listed first.
+    // 4. Merge all chains into one session order: always take the chain
+    //    whose next session is most important, so urgent work goes first
+    //    while each chain's own sessions stay in order (pages in order,
+    //    and a course's files one after another). A session counts as
+    //    important as anything after it in its chain (you can't reach an
+    //    urgent later chapter without studying what comes before it).
+    //    Ties go to the chain listed first.
     // -------------------------------------------------------------
-    std::vector<PlannedSession> mergeStreams(std::vector<std::vector<PlannedSession>>& streams) const {
-        std::vector<std::vector<double>> effective(streams.size());
-        for (size_t i = 0; i < streams.size(); ++i) {
-            effective[i].resize(streams[i].size());
+    std::vector<PlannedSession> mergeChains(std::vector<std::vector<PlannedSession>>& chains) const {
+        std::vector<std::vector<double>> effective(chains.size());
+        for (size_t i = 0; i < chains.size(); ++i) {
+            effective[i].resize(chains[i].size());
             double best = std::numeric_limits<double>::lowest();
-            for (size_t j = streams[i].size(); j-- > 0;) {
-                best = std::max(best, streams[i][j].score);
+            for (size_t j = chains[i].size(); j-- > 0;) {
+                best = std::max(best, chains[i][j].score);
                 effective[i][j] = best;
             }
         }
 
-        std::vector<size_t> next(streams.size(), 0);
+        std::vector<size_t> next(chains.size(), 0);
         std::vector<PlannedSession> ordered;
         while (true) {
             int pick = -1;
-            for (size_t i = 0; i < streams.size(); ++i) {
-                if (next[i] >= streams[i].size()) continue;
+            for (size_t i = 0; i < chains.size(); ++i) {
+                if (next[i] >= chains[i].size()) continue;
                 if (pick == -1 || effective[i][next[i]] > effective[pick][next[pick]]) {
                     pick = static_cast<int>(i);
                 }
             }
             if (pick == -1) break;
-            ordered.push_back(std::move(streams[pick][next[pick]++]));
+            ordered.push_back(std::move(chains[pick][next[pick]++]));
         }
         return ordered;
     }
@@ -497,10 +557,11 @@ private:
 //
 // Input (stdin, one record per line, pipe-delimited; any order):
 //   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
-//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId|exactMinutes
+//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId|exactMinutes|courseId
 //   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
 // materialId may be empty (two consecutive pipes). exactMinutes is 1 when
 // the user set the task's duration themselves (optional, default 0).
+// courseId (optional) puts a course's PDFs in sequence, in materialId order.
 //
 // Output (stdout, one line per task per session, key=value):
 //   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
@@ -567,6 +628,7 @@ int main() {
                 // with older callers/sample data that don't send it yet.
                 task.materialId = (fields.size() >= 10) ? fields[9] : "";
                 task.exactMinutes = (fields.size() >= 11) && fields[10] == "1";
+                task.courseId = (fields.size() >= 12) ? fields[11] : "";
                 tasks.push_back(task);
             } else if (fields[0] == "SLOT" && fields.size() >= 5) {
                 TimeSlot slot;

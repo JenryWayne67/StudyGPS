@@ -362,21 +362,8 @@
     // time. finishTimer() logs the session against each of them.
     let activeSessionItems = null;
 
-    // Which task cards currently have their inline PDF viewer expanded.
-    // Kept separate from the timer state so opening the PDF doesn't
-    // require (or interfere with) starting a timer, and survives
-    // renderTasks() being called again (filter changes, etc.) since the
-    // countdown tick itself only calls updateTimerDisplay(), not this.
-    const openPdfTaskIds = new Set();
-
-    function togglePdfPanel(taskId) {
-      if (openPdfTaskIds.has(taskId)) {
-        openPdfTaskIds.delete(taskId);
-      } else {
-        openPdfTaskIds.add(taskId);
-      }
-      renderTasks();
-    }
+    // (The PDF is read in Full Screen - see openFullscreen() - not inline
+    // on the cards.)
 
     // Which task the full screen study view is currently showing (null =
     // closed). Separate from the timer's own activeTaskId - you can open
@@ -406,9 +393,9 @@
       fullscreenTaskId = Number(taskId);
       fullscreenSessionKey = group ? sessionKey : null;
 
-      document.getElementById('fsTitle').textContent = group ? group.items.map(t => t.title).join(' + ') : task.title;
+      document.getElementById('fsTitle').textContent = group ? cardTitle(group.items[0], group.items) : cardTitle(task);
       document.getElementById('fsSubtitle').textContent =
-        task.course_name + (task.material_name ? ` · ${task.material_name}` : '');
+        task.course_name + (!group && task.material_name ? ` · ${task.title}` : '');
 
       const pdfPane = document.getElementById('fsPdfPane');
       const timerPane = document.getElementById('fsTimerPane');
@@ -865,6 +852,21 @@
       return weights.map((w) => w / total);
     }
 
+    // A card's main title, same as on the Schedule page: the PDF's name for
+    // material sections (the sections are listed underneath), or the task's
+    // own title for a custom task.
+    function cardTitle(task, items = [task]) {
+      return task.material_name ? task.material_name.replace(/\.pdf$/i, '') : items.map(t => t.title).join(' + ');
+    }
+
+    // Scheduled PDF sections always get the session card (PDF name as the
+    // title, sections listed underneath); so does any session covering more
+    // than one task. Unscheduled and custom tasks keep the plain card.
+    function isSessionCard(group) {
+      const first = group.items[0];
+      return group.items.length > 1 || (first.schedule_id != null && Boolean(first.material_id));
+    }
+
     // A section counts as done in a session when the task is Completed, or
     // when that scheduled session itself was finished (a section that
     // continues in a later session is done here but still open there).
@@ -1049,10 +1051,10 @@
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="space-y-1">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${task.title}</h3>
+                  <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${cardTitle(task)}</h3>
                   ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
                 </div>
-                <p class="text-xs text-slate-600 font-medium">${task.course_name}${task.material_name ? ` <span class="text-slate-400 font-normal">· ${task.material_name}</span>` : ''}</p>
+                <p class="text-xs text-slate-600 font-medium">${task.course_name}${task.material_name ? ` <span class="text-slate-400 font-normal">· ${task.title}</span>` : ''}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
                   <span>${task.pages}</span>
                   <span>•</span>
@@ -1065,12 +1067,7 @@
               </div>
 
               <div class="flex items-center gap-2">
-                ${task.material_id ? `
-                  <button type="button" onclick="togglePdfPanel(${task.id})" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path><path d="M6 6h10"></path><path d="M6 10h10"></path></svg>
-                    ${openPdfTaskIds.has(task.id) ? 'Hide PDF' : 'View PDF'}
-                  </button>
-                ` : ''}
+
                 <button type="button" onclick="openEditTaskModal(${task.id})" title="Edit task" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                   ✏️ Edit
                 </button>
@@ -1095,21 +1092,7 @@
               </div>
             </div>
 
-            <!-- INLINE PDF VIEWER: lets the person read the actual material
-                 right here while a timer on this same card is tracking
-                 their session, instead of needing a separate tab. Jumps to
-                 this task's start page via the #page= fragment, which
-                 Chrome/Edge/Firefox's built-in PDF viewer all honor. -->
-            ${task.material_id && openPdfTaskIds.has(task.id) ? `
-              <div class="border-t border-slate-100 pt-4 mt-2">
-                <iframe
-                  src="/api/materials/${task.material_id}/file${task.start_page ? `#page=${task.start_page}` : ''}"
-                  class="w-full rounded-xl border border-slate-200"
-                  style="height: 70vh;"
-                  title="${task.material_name || 'Study material'}"
-                ></iframe>
-              </div>
-            ` : ''}
+
 
             <!-- INLINE TIMER PANEL: APPEARS ONLY UNDER THIS TASK WHEN STARTED -->
             ${isCurrentActive ? inlineTimerPanel(finishesTask(task) ? 'Complete Task' : 'Finish Session') : ''}
@@ -1127,7 +1110,7 @@
         const next = items.find(t => !isItemDone(t)) || first;
         const isCurrentActive = isTimerActive && group.key === activeOccurrenceKey;
         const pages = sessionPagesLabel(items);
-        const openAtPage = next.session_start_page ?? next.start_page;
+
 
         return `
           <div id="task-card-${group.key}" data-task-id="${next.id}" class="bg-white border ${isCurrentActive ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/10 shadow-md' : (allDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200')} rounded-2xl p-5 shadow-sm transition space-y-4">
@@ -1135,25 +1118,20 @@
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="space-y-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <h3 class="text-sm font-bold text-slate-900 ${allDone ? 'line-through text-slate-400' : ''}">${items.map(t => t.title).join(' + ')}</h3>
+                  <h3 class="text-sm font-bold text-slate-900 ${allDone ? 'line-through text-slate-400' : ''}">${cardTitle(first, items)}</h3>
                   ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
                 </div>
-                <p class="text-xs text-slate-600 font-medium">${first.course_name}${first.material_name ? ` <span class="text-slate-400 font-normal">· ${first.material_name}</span>` : ''}</p>
+                <p class="text-xs text-slate-600 font-medium">${first.course_name}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium flex-wrap">
                   ${pages ? `<span>${pages}</span><span>•</span>` : ''}
                   <span>${formatClock(first.session_start_time)} – ${formatClock(first.session_end_time)} (${first.session_minutes} min)</span>
                   <span>•</span>
-                  <span>${items.length} sections</span>
+                  <span>${items.length} ${items.length === 1 ? 'section' : 'sections'}</span>
                 </div>
               </div>
 
               <div class="flex items-center gap-2">
-                ${first.material_id ? `
-                  <button type="button" onclick="togglePdfPanel('${group.key}')" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path><path d="M6 6h10"></path><path d="M6 10h10"></path></svg>
-                    ${openPdfTaskIds.has(group.key) ? 'Hide PDF' : 'View PDF'}
-                  </button>
-                ` : ''}
+
                 <button type="button" onclick="openFullscreen(${next.id}, '${group.key}')" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
                   Full Screen
@@ -1194,23 +1172,14 @@
               `).join('')}
             </div>
 
-            ${first.material_id && openPdfTaskIds.has(group.key) ? `
-              <div class="border-t border-slate-100 pt-4 mt-2">
-                <iframe
-                  src="/api/materials/${first.material_id}/file${openAtPage ? `#page=${openAtPage}` : ''}"
-                  class="w-full rounded-xl border border-slate-200"
-                  style="height: 70vh;"
-                  title="${first.material_name || 'Study material'}"
-                ></iframe>
-              </div>
-            ` : ''}
+
 
             ${isCurrentActive ? inlineTimerPanel('Complete Session') : ''}
           </div>
         `;
       };
 
-      const renderGroup = (group) => group.items.length > 1 ? createSessionCard(group) : createCard(group.items[0]);
+      const renderGroup = (group) => isSessionCard(group) ? createSessionCard(group) : createCard(group.items[0]);
 
       const todayContainer = document.getElementById('todayTasksList');
       if (todayTasks.length === 0) {
@@ -1446,7 +1415,7 @@
         // none of them.
         const matchingTask = allTasksCache.find(t => Number(t.id) === Number(paramTaskId));
         const landingGroup = matchingTask ? sessionGroupsByKey.get(sessionKey(matchingTask)) : null;
-        if (landingGroup && landingGroup.items.length > 1) {
+        if (landingGroup && isSessionCard(landingGroup)) {
           // That section shares its session with others - open the
           // session's card, with one timer for the whole session.
           startSessionTimer(landingGroup.key, false);
