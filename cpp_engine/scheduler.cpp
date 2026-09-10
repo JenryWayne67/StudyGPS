@@ -104,6 +104,17 @@ public:
         std::vector<TimeSlot> remainingSlots = availableSlots_;
         std::map<int, int> dailyUsedMinutes; // dayIndex -> minutes used so far
 
+        // Minutes placed in each slot since the last break was taken there.
+        // A "study session" is the user's preferred block length (e.g. 50
+        // min), not "however much one task happens to need" - a task
+        // estimated at only 5-6 minutes (e.g. a short PDF section) must be
+        // packed back-to-back with the next task(s) in the same slot, with
+        // no break between them, until a full session's worth of study time
+        // has accumulated. Only then is a break inserted. Without this, a
+        // break was previously added after every single task regardless of
+        // size, turning tiny tasks into their own isolated tiny "sessions".
+        std::vector<int> blockMinutesSinceBreak(remainingSlots.size(), 0);
+
         for (const Task& task : ordered) {
             std::vector<int> chunks = splitTask(task.estimatedMinutes, config_.sessionLengthMinutes);
 
@@ -145,11 +156,19 @@ public:
                     task, slot, chunkMinutes, chunkStartPage, chunkEndPage, i + 1, totalParts);
                 schedule.push_back(session);
 
-                // Consume the time (and the following break) from the slot.
+                // Consume the time from the slot, and only take a break once
+                // a full session's worth of study time has accumulated in
+                // this block - not after every individual task/chunk. That
+                // keeps small tasks packed into one properly-sized session
+                // instead of each becoming its own tiny session-and-break.
                 dailyUsedMinutes[slot.dayIndex] += chunkMinutes;
                 slot.startMinutes += chunkMinutes;
-                if (slot.startMinutes + config_.breakLengthMinutes <= slot.endMinutes) {
+                blockMinutesSinceBreak[slotIdx] += chunkMinutes;
+
+                if (blockMinutesSinceBreak[slotIdx] >= config_.sessionLengthMinutes &&
+                    slot.startMinutes + config_.breakLengthMinutes <= slot.endMinutes) {
                     slot.startMinutes += config_.breakLengthMinutes;
+                    blockMinutesSinceBreak[slotIdx] = 0;
                 }
             }
         }
