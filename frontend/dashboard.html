@@ -312,6 +312,14 @@
       return merged.length ? 'Pages ' + merged.map(([s, e]) => `${s}-${e}`).join(', ') : '';
     }
 
+    // A session's title, same as on Schedule and Tasks: the PDF's name, or
+    // the task's own title for a custom task.
+    function sessionTitle(session) {
+      return session.material_name
+        ? session.material_name.replace(/\.pdf$/i, '')
+        : session.items.map(i => i.title).join(' + ');
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
       // Sync user profile
       const authData = await fetchJSON('/api/auth/me');
@@ -376,7 +384,7 @@
           <div class="${idx > 0 ? 'pt-4' : 'pt-2'} flex items-center justify-between gap-4">
             <div class="space-y-1">
               <span class="text-xs font-bold text-blue-600">${formatClock(item.start_time)}</span>
-              <h3 class="text-sm font-bold text-slate-900">${item.items.map(i => i.title).join(' + ')}</h3>
+              <h3 class="text-sm font-bold text-slate-900">${sessionTitle(item)}</h3>
               <p class="text-xs text-slate-500 font-medium">${item.course_name || 'Study'}${pages ? ` • ${pages}` : ''}</p>
             </div>
             <a href="tasks.html?task_id=${sessionTarget(item).task_id}${minutesParam}" class="btn btn-primary btn-sm whitespace-nowrap">
@@ -388,7 +396,7 @@
 
         const firstItem = todaysSessions[0];
         const firstMins = sessionMinutes(firstItem.start_time, firstItem.end_time);
-        document.getElementById('recTaskTitle').textContent = firstItem.items.map(i => i.title).join(' + ');
+        document.getElementById('recTaskTitle').textContent = sessionTitle(firstItem);
         document.getElementById('recTaskMeta').textContent = `${firstItem.course_name || 'Study'} • ${formatClock(firstItem.start_time)}`;
         document.getElementById('recTaskBtn').href = `tasks.html?task_id=${sessionTarget(firstItem).task_id}${firstMins ? `&minutes=${firstMins}` : ''}`;
       } else {
@@ -403,8 +411,12 @@
         const nextTask = tasks.find(t => t.status !== 'Completed');
         const recBtn = document.getElementById('recTaskBtn');
         if (nextTask) {
-          document.getElementById('recTaskTitle').textContent = nextTask.title;
-          document.getElementById('recTaskMeta').textContent = `${nextTask.course_name || 'Study'} • ${nextTask.estimated_minutes || '—'} min`;
+          // Same title style as the sessions above: the PDF's name, with the
+          // section itself in the line underneath.
+          document.getElementById('recTaskTitle').textContent =
+            nextTask.material_name ? nextTask.material_name.replace(/\.pdf$/i, '') : nextTask.title;
+          document.getElementById('recTaskMeta').textContent =
+            `${nextTask.course_name || 'Study'}${nextTask.material_name ? ` · ${nextTask.title}` : ''} • ${nextTask.estimated_minutes || '—'} min`;
           recBtn.href = `tasks.html?task_id=${nextTask.id}`;
           recBtn.textContent = 'Study Now ⏱';
         } else {
