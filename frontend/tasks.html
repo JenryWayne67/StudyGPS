@@ -284,6 +284,11 @@
           <label class="block text-xs font-semibold text-slate-700 mb-1">Deadline (optional)</label>
           <input type="date" id="newTaskDeadline" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
         </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Attach a PDF (optional)</label>
+          <input type="file" id="newTaskPdf" accept="application/pdf" class="w-full text-xs text-slate-600">
+          <p class="text-[11px] text-slate-400 mt-1">Just for reading in Full Screen - no sections are made from it.</p>
+        </div>
         <p id="addTaskError" class="hidden text-xs text-red-600 font-medium"></p>
       </div>
 
@@ -326,6 +331,14 @@
         <div>
           <label class="block text-xs font-semibold text-slate-700 mb-1">Deadline (optional)</label>
           <input type="date" id="editTaskDeadline" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div id="editTaskAttachmentRow" class="hidden">
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Attached PDF (optional)</label>
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <p id="editTaskAttachmentName" class="text-xs text-slate-600 truncate"></p>
+            <button type="button" id="editTaskRemovePdf" onclick="removeEditAttachment()" class="text-xs font-semibold text-red-600 hover:underline whitespace-nowrap">Remove</button>
+          </div>
+          <input type="file" id="editTaskPdf" accept="application/pdf" class="w-full text-xs text-slate-600">
         </div>
         <label class="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
           <input type="checkbox" id="editTaskRegenerate" class="w-4 h-4 accent-blue-600 cursor-pointer" checked>
@@ -407,10 +420,12 @@
       const pdfPane = document.getElementById('fsPdfPane');
       const timerPane = document.getElementById('fsTimerPane');
 
-      if (task.material_id) {
+      // A PDF task shows its PDF; a custom task shows its attached PDF, if any.
+      const pdfId = task.material_id || task.attachment_id;
+      if (pdfId) {
         const openAtPage = task.session_start_page ?? task.start_page;
         document.getElementById('fsPdfFrame').src =
-          `/api/materials/${task.material_id}/file${openAtPage ? `#page=${openAtPage}` : ''}`;
+          `/api/materials/${pdfId}/file${openAtPage ? `#page=${openAtPage}` : ''}`;
         pdfPane.classList.remove('hidden');
         timerPane.classList.remove('w-full', 'lg:max-w-none');
         timerPane.classList.add('w-full', 'lg:w-80');
@@ -1087,7 +1102,7 @@
                 </div>
                 <p class="text-xs text-slate-600 font-medium">${task.course_name}${task.material_name ? ` <span class="text-slate-400 font-normal">· ${task.title}</span>` : ''}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
-                  <span>${task.pages}</span>
+                  <span>${task.attachment_name ? `📎 ${task.attachment_name}` : task.pages}</span>
                   <span>•</span>
                   ${task.session_start_time && task.session_end_time ? `
                     <span>${formatClock(task.session_start_time)} – ${formatClock(task.session_end_time)} (${task.session_minutes} min)</span>
@@ -1232,6 +1247,7 @@
     // into the same TODAY/UPCOMING lists as everything else.
     function openAddTaskModal() {
       document.getElementById('newTaskTitle').value = '';
+      document.getElementById('newTaskPdf').value = '';
       document.getElementById('newTaskMinutes').value = 30;
       document.getElementById('newTaskPriority').value = 'medium';
       document.getElementById('newTaskDeadline').value = '';
@@ -1279,6 +1295,15 @@
           throw new Error(data.error || 'Could not add task.');
         }
 
+        const pdf = document.getElementById('newTaskPdf').files[0];
+        if (pdf) {
+          try {
+            await uploadAttachment(data.task.id, pdf);
+          } catch (err) {
+            alert(`The task was added, but the PDF couldn't be attached: ${err.message}`);
+          }
+        }
+
         closeAddTaskModal();
         await loadTasks();
         renderTasks();
@@ -1299,6 +1324,8 @@
     // The priority the edit form opened with - only sent back if the user
     // actually changed it (see submitEditTask()).
     let editingInitialPriority = null;
+    // Set when the user clicked Remove on the task's attached PDF (applied on save).
+    let editingRemoveAttachment = false;
 
     // allTasksCache's `priority` is the raw numeric value tasks.js stores
     // (low/medium/high map to 20/45/70, and a PDF-derived task can carry
@@ -1347,6 +1374,25 @@
       }
     }
 
+    // Attach (or replace) a PDF on one of the user's own tasks - for reading
+    // in Full Screen only; no sections are made from it.
+    async function uploadAttachment(taskId, file) {
+      const form = new FormData();
+      form.append('pdf', file);
+      const res = await fetch(`/api/tasks/${taskId}/attachment`, { method: 'PUT', body: form });
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* not JSON */ }
+      if (!res.ok || !data || !data.success) {
+        throw new Error((data && data.error) || 'the server did not accept the file.');
+      }
+    }
+
+    function removeEditAttachment() {
+      editingRemoveAttachment = true;
+      document.getElementById('editTaskAttachmentName').textContent = 'Will be removed when you save';
+      document.getElementById('editTaskRemovePdf').classList.add('hidden');
+    }
+
     function openEditTaskModal(taskId) {
       const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
       if (!task) return;
@@ -1357,6 +1403,12 @@
       document.getElementById('editTaskPriority').value = priorityLabelForNumber(task.priority);
       editingInitialPriority = document.getElementById('editTaskPriority').value;
       document.getElementById('editTaskRegenerate').checked = true;
+      // Only the user's own tasks can have an attached PDF.
+      editingRemoveAttachment = false;
+      document.getElementById('editTaskAttachmentRow').classList.toggle('hidden', Boolean(task.material_id));
+      document.getElementById('editTaskAttachmentName').textContent = task.attachment_name ? `📎 ${task.attachment_name}` : 'None';
+      document.getElementById('editTaskRemovePdf').classList.toggle('hidden', !task.attachment_name);
+      document.getElementById('editTaskPdf').value = '';
       document.getElementById('editTaskDeadline').value = task.deadline || '';
       document.getElementById('editTaskError').classList.add('hidden');
       document.getElementById('editTaskModal').classList.remove('hidden');
@@ -1409,6 +1461,13 @@
         const data = await res.json();
         if (!res.ok || !data.success) {
           throw new Error(data.error || 'Could not save changes.');
+        }
+
+        const newPdf = document.getElementById('editTaskPdf').files[0];
+        if (newPdf) {
+          await uploadAttachment(editingTaskId, newPdf);
+        } else if (editingRemoveAttachment) {
+          await fetch(`/api/tasks/${editingTaskId}/attachment`, { method: 'DELETE' });
         }
 
         const regenerate = document.getElementById('editTaskRegenerate').checked;

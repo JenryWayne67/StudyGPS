@@ -154,6 +154,12 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added sections.minutes_customized column.');
   }
 
+  // A PDF attached to a custom task, only for reading (see backend/routes/tasks.js).
+  if (!sectionColumnNames.includes('attachment_id')) {
+    await client.execute(`ALTER TABLE sections ADD COLUMN attachment_id INTEGER`);
+    console.log('Migrated: added sections.attachment_id column.');
+  }
+
   const courseCols = await client.execute(`PRAGMA table_info(courses)`);
   const courseColumnNames = courseCols.rows.map((r) => r.name);
 

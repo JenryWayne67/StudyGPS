@@ -1,12 +1,12 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const { execFileSync } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../lib/db');
 const {
+    receivePdf,
     saveMaterialFile,
     deleteMaterialFile,
     forEachMaterialFileChunk,
@@ -38,53 +38,6 @@ function materialOwnedByUser(materialId, userId) {
 }
 
 // ==========================================
-// PDF UPLOAD CONFIGURATION
-//
-// Uploaded PDFs are held in memory only long enough to be written into
-// the `materials.file_data` column (see database/schema.sql) instead of
-// a local uploads/ folder. A folder on disk doesn't survive Render's
-// ephemeral filesystem (wiped on every restart/redeploy/sleep), and
-// wouldn't survive at all once the app can run on more than one host -
-// storing the bytes in the same database as everything else means a PDF
-// persists exactly as reliably as the rest of a user's data, with
-// nothing extra to configure.
-// ==========================================
-
-const MAX_UPLOAD_MB = 50;
-
-const upload = multer({
-    storage: multer.memoryStorage(),
-
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf') {
-            cb(null, true);
-        } else {
-            cb(new Error('Only PDF files are allowed'));
-        }
-    },
-
-    limits: {
-        fileSize: MAX_UPLOAD_MB * 1024 * 1024
-    }
-});
-
-// Runs the multer upload and turns its errors (too big, not a PDF) into the
-// same JSON { success, error } shape as every other failure, so the page can
-// show the real reason instead of choking on Express's HTML error page.
-function receivePdf(req, res, next) {
-    upload.single('pdf')(req, res, (err) => {
-        if (!err) return next();
-        const tooBig = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
-        res.status(tooBig ? 413 : 400).json({
-            success: false,
-            error: tooBig
-                ? `This PDF can't be uploaded: it's larger than ${MAX_UPLOAD_MB} MB.`
-                : `This file can't be uploaded: ${err.message}`
-        });
-    });
-}
-
-// ==========================================
 // GET /api/materials
 // ==========================================
 
@@ -111,7 +64,7 @@ router.get('/', async (req, res) => {
                     file_size,
                     deadline
                 FROM materials
-                WHERE course_id = ?
+                WHERE course_id = ? AND status != 'attachment'
                 ORDER BY id DESC
             `).all(courseId);
         } else {
@@ -127,7 +80,7 @@ router.get('/', async (req, res) => {
                     m.deadline
                 FROM materials m
                 JOIN courses c ON c.id = m.course_id
-                WHERE c.user_id = ?
+                WHERE c.user_id = ? AND m.status != 'attachment'
                 ORDER BY m.id DESC
             `).all(userId);
         }
@@ -604,6 +557,14 @@ const material = await materialOwnedByUser(materialId, req.user.id);
             return res.status(404).json({
                 success: false,
                 error: 'Material not found'
+            });
+        }
+
+        // A PDF attached to a custom task is for reading only - never analyzed.
+        if (material.status === 'attachment') {
+            return res.status(400).json({
+                success: false,
+                error: 'This PDF is attached to a task for reading only, so no sections are made from it.'
             });
         }
 

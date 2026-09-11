@@ -11,10 +11,37 @@
 // 1 MB pieces in material_file_chunks and read one piece per request.
 // materials.file_data is still read for PDFs uploaded before this change.
 
+const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const { db } = require('./db');
 
 const CHUNK_SIZE = 1024 * 1024;
+const MAX_UPLOAD_MB = 50;
+
+// Uploaded PDFs are held in memory only for the request, then stored in pieces.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new Error('Only PDF files are allowed'));
+    },
+    limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 }
+});
+
+// Express middleware for one PDF in the `pdf` form field; multer's errors (too
+// big, not a PDF) become the usual JSON { success, error } reply.
+function receivePdf(req, res, next) {
+    upload.single('pdf')(req, res, (err) => {
+        if (!err) return next();
+        const tooBig = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+        res.status(tooBig ? 413 : 400).json({
+            success: false,
+            error: tooBig
+                ? `This PDF can't be uploaded: it's larger than ${MAX_UPLOAD_MB} MB.`
+                : `This file can't be uploaded: ${err.message}`
+        });
+    });
+}
 
 // Readable characters (not counting whitespace or pdf-parse's page markers)
 // a PDF needs per page, on average, for section detection to have anything
@@ -105,6 +132,7 @@ async function extractPdfText(buffer) {
 }
 
 module.exports = {
+    receivePdf,
     saveMaterialFile,
     deleteMaterialFile,
     forEachMaterialFileChunk,

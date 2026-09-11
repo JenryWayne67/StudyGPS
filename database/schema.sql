@@ -115,6 +115,7 @@ CREATE TABLE sections (
     difficulty INTEGER DEFAULT 1,
     material_id INTEGER REFERENCES materials(id),
     minutes_customized INTEGER DEFAULT 0, -- 1 when the user set estimated_minutes themselves; the scheduler then keeps it exact
+    attachment_id INTEGER, -- a PDF attached to a custom task for reading only (materials row, status 'attachment')
     FOREIGN KEY (course_id) REFERENCES courses(id)
 );
 

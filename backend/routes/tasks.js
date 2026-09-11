@@ -1,10 +1,31 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../lib/db');
+const { receivePdf, saveMaterialFile, deleteMaterialFile } = require('../lib/materialFiles');
 
 const router = express.Router();
 
 router.use(requireAuth);
+
+// A PDF attached to a custom task, only for reading in Full Screen. It's a
+// materials row with status 'attachment' (stored in pieces like any upload),
+// hidden from Materials and never analyzed into sections.
+async function removeAttachment(materialId) {
+    await deleteMaterialFile(materialId);
+    await db.prepare(`DELETE FROM materials WHERE id = ? AND status = 'attachment'`).run(materialId);
+}
+
+// The task with its section, if it's this user's.
+async function ownedTask(taskId, userId) {
+    const task = await db.prepare(`
+        SELECT t.id, s.id AS section_id, s.course_id, s.material_id, s.attachment_id, c.user_id AS owner_user_id
+        FROM tasks t
+        JOIN sections s ON s.id = t.section_id
+        LEFT JOIN courses c ON c.id = s.course_id
+        WHERE t.id = ?
+    `).get(taskId);
+    return task && task.owner_user_id === userId ? task : null;
+}
 
 // A custom task (added by the user directly from Tasks & Timer, not
 // derived from an uploaded PDF) still needs a course + section row to fit
@@ -136,11 +157,14 @@ router.get('/', async (req, res) => {
                 s.material_id,
                 s.course_id,
                 c.name AS course_name,
-                m.filename AS material_name
+                m.filename AS material_name,
+                s.attachment_id,
+                a.filename AS attachment_name
             FROM tasks t
             JOIN sections s ON s.id = t.section_id
             JOIN courses c ON c.id = s.course_id
             LEFT JOIN materials m ON m.id = s.material_id
+            LEFT JOIN materials a ON a.id = s.attachment_id
             WHERE c.user_id = ?
             ORDER BY t.priority DESC
         `).all(req.user.id);
@@ -491,15 +515,8 @@ router.delete('/:id', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid task ID' });
         }
 
-        const task = await db.prepare(`
-            SELECT t.id, c.user_id AS owner_user_id
-            FROM tasks t
-            JOIN sections s ON s.id = t.section_id
-            LEFT JOIN courses c ON c.id = s.course_id
-            WHERE t.id = ?
-        `).get(taskId);
-
-        if (!task || task.owner_user_id !== req.user.id) {
+        const task = await ownedTask(taskId, req.user.id);
+        if (!task) {
             return res.status(404).json({ success: false, error: `Task ${taskId} does not exist` });
         }
 
@@ -507,13 +524,80 @@ router.delete('/:id', async (req, res) => {
             await tx.prepare(`DELETE FROM schedules WHERE task_id = ?`).run(taskId);
             await tx.prepare(`DELETE FROM study_sessions WHERE task_id = ?`).run(taskId);
             await tx.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId);
+            if (task.attachment_id) {
+                await tx.prepare(`UPDATE sections SET attachment_id = NULL WHERE id = ?`).run(task.section_id);
+            }
         });
 
         await deleteTask();
+        if (task.attachment_id) await removeAttachment(task.attachment_id);
 
         res.json({ success: true, message: 'Task deleted successfully' });
     } catch (error) {
         console.error('Delete task error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// PUT /api/tasks/:id/attachment  (multipart form, field "pdf")
+// Attach a PDF to one of the user's own tasks, only to read it in Full
+// Screen - no sections or tasks are made from it, so any PDF works (even
+// scanned pages). Replaces an earlier attachment.
+// ==========================================
+router.put('/:id/attachment', receivePdf, async (req, res) => {
+    let attachmentId = null;
+    try {
+        const task = await ownedTask(Number(req.params.id), req.user.id);
+        if (!task) {
+            return res.status(404).json({ success: false, error: `Task ${req.params.id} does not exist` });
+        }
+        if (task.material_id) {
+            return res.status(400).json({ success: false, error: 'Only your own tasks can have an attached PDF.' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'PDF file is required' });
+        }
+        if (req.file.buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+            return res.status(422).json({ success: false, error: "This file can't be attached: it isn't a real PDF." });
+        }
+
+        const info = await db.prepare(`
+            INSERT INTO materials (course_id, filename, status, file_size) VALUES (?, ?, 'attachment', ?)
+        `).run(task.course_id, req.file.originalname, req.file.size);
+        attachmentId = info.lastInsertRowid;
+        await saveMaterialFile(attachmentId, req.file.buffer);
+        await db.prepare(`UPDATE sections SET attachment_id = ? WHERE id = ?`).run(attachmentId, task.section_id);
+
+        if (task.attachment_id) await removeAttachment(task.attachment_id);
+
+        res.json({ success: true, attachment: { id: attachmentId, name: req.file.originalname } });
+    } catch (error) {
+        console.error('Attach PDF error:', error);
+        if (attachmentId != null) {
+            try { await removeAttachment(attachmentId); } catch (_) { /* best effort */ }
+        }
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==========================================
+// DELETE /api/tasks/:id/attachment
+// Remove a task's attached PDF.
+// ==========================================
+router.delete('/:id/attachment', async (req, res) => {
+    try {
+        const task = await ownedTask(Number(req.params.id), req.user.id);
+        if (!task) {
+            return res.status(404).json({ success: false, error: `Task ${req.params.id} does not exist` });
+        }
+        if (task.attachment_id) {
+            await db.prepare(`UPDATE sections SET attachment_id = NULL WHERE id = ?`).run(task.section_id);
+            await removeAttachment(task.attachment_id);
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Remove attached PDF error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
