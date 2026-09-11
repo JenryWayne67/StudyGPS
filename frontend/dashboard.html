@@ -321,6 +321,15 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
+      // Start loading the page's data right away, alongside the sign-in
+      // check, instead of after it - every request is a full round trip to
+      // the server.
+      const dataPromise = Promise.all([
+        fetchJSON('/api/tasks'),
+        fetchJSON('/api/study-sessions'),
+        fetchJSON('/api/schedule')
+      ]);
+
       // Sync user profile
       const authData = await fetchJSON('/api/auth/me');
       if (!authData) return; // fetchJSON already redirected to /login
@@ -341,11 +350,7 @@
       document.getElementById('currentDateLabel').textContent =
         now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
-      const [tasksData, sessionsData, scheduleData] = await Promise.all([
-        fetchJSON('/api/tasks'),
-        fetchJSON('/api/study-sessions'),
-        fetchJSON('/api/schedule')
-      ]);
+      const [tasksData, sessionsData, scheduleData] = await dataPromise;
 
       const tasks = (tasksData && tasksData.tasks) || [];
       const sessions = (sessionsData && sessionsData.sessions) || [];

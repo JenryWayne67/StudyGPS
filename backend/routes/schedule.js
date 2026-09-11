@@ -307,8 +307,7 @@ function runScheduler({ preferences, tasks, slots }) {
 router.post('/generate', async (req, res) => {
     try {
         const userId = req.user.id;
-        const preferences = await getPreferences(userId);
-        const tasks = await getPendingTasks(userId);
+        const [preferences, tasks] = await Promise.all([getPreferences(userId), getPendingTasks(userId)]);
         const { slots, dateByDayIndex } = buildSlotsAndDateMap(preferences);
 
         if (tasks.length === 0) {
@@ -320,50 +319,36 @@ router.post('/generate', async (req, res) => {
         const replace = db.transaction(async (tx) => {
             // Clear only this user's existing schedule rows before
             // rebuilding - never touches other users' schedules.
-            const oldIds = (await tx.prepare(`
-                SELECT sch.id
-                FROM schedules sch
-                JOIN tasks t ON t.id = sch.task_id
-                JOIN sections s ON s.id = t.section_id
-                JOIN courses c ON c.id = s.course_id
-                WHERE c.user_id = ?
-            `).all(userId)).map((r) => r.id);
+            await tx.prepare(`
+                DELETE FROM schedules
+                WHERE task_id IN (
+                    SELECT t.id
+                    FROM tasks t
+                    JOIN sections s ON s.id = t.section_id
+                    JOIN courses c ON c.id = s.course_id
+                    WHERE c.user_id = ?
+                )
+            `).run(userId);
 
-            if (oldIds.length > 0) {
-                const placeholders = oldIds.map(() => '?').join(',');
-                await tx.prepare(`DELETE FROM schedules WHERE id IN (${placeholders})`).run(...oldIds);
-            }
+            const rows = sessions.map((s) => ({
+                task_id: s.task_id,
+                date: dateByDayIndex.get(s.day_index) || null,
+                start_time: minutesToTime(s.start_minutes),
+                end_time: minutesToTime(s.end_minutes),
+                start_page: s.start_page >= 0 ? s.start_page : null,
+                end_page: s.end_page >= 0 ? s.end_page : null,
+                part: s.part,
+                total_parts: s.total_parts
+            }));
 
-            const insertSession = tx.prepare(`
-                INSERT INTO schedules (task_id, date, start_time, end_time, start_page, end_page)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `);
+            // Every new session in one database round trip, not one each.
+            const results = await tx.batch(rows.map((r) => ({
+                sql: `INSERT INTO schedules (task_id, date, start_time, end_time, start_page, end_page)
+                      VALUES (?, ?, ?, ?, ?, ?)`,
+                args: [r.task_id, r.date, r.start_time, r.end_time, r.start_page, r.end_page]
+            })));
 
-            const inserted = [];
-            for (const s of sessions) {
-                const date = dateByDayIndex.get(s.day_index) || null;
-                const info = await insertSession.run(
-                    s.task_id,
-                    date,
-                    minutesToTime(s.start_minutes),
-                    minutesToTime(s.end_minutes),
-                    s.start_page >= 0 ? s.start_page : null,
-                    s.end_page >= 0 ? s.end_page : null
-                );
-                inserted.push({
-                    id: info.lastInsertRowid,
-                    task_id: s.task_id,
-                    date,
-                    start_time: minutesToTime(s.start_minutes),
-                    end_time: minutesToTime(s.end_minutes),
-                    start_page: s.start_page >= 0 ? s.start_page : null,
-                    end_page: s.end_page >= 0 ? s.end_page : null,
-                    part: s.part,
-                    total_parts: s.total_parts
-                });
-            }
-
-            return inserted;
+            return rows.map((r, i) => ({ id: results[i].lastInsertRowid, ...r }));
         });
 
         const schedule = await replace();

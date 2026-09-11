@@ -9,6 +9,8 @@
 // All functions here are async now (see backend/lib/db.js) - every caller
 // needs to await them.
 
+const { forgetCachedUser } = require('./userCache');
+
 async function upsertGoogleUser(db, { googleId, name, email }) {
     let user = await db.prepare(`SELECT * FROM users WHERE google_id = ?`).get(googleId);
 
@@ -25,6 +27,7 @@ async function upsertGoogleUser(db, { googleId, name, email }) {
         // more authoritative than a name they typed into the interview.
         await db.prepare(`UPDATE users SET google_id = ? WHERE id = ?`)
             .run(googleId, user.id);
+        forgetCachedUser(user.id);
         return db.prepare(`SELECT * FROM users WHERE id = ?`).get(user.id);
     }
 
@@ -79,6 +82,7 @@ async function updateUserName(db, userId, name) {
     const trimmed = (name || '').trim();
     if (!trimmed) return findUserById(db, userId);
     await db.prepare(`UPDATE users SET name = ? WHERE id = ?`).run(trimmed, userId);
+    forgetCachedUser(userId); // so the new name shows up on the very next request
     return findUserById(db, userId);
 }
 

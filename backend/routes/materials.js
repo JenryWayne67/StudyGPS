@@ -569,16 +569,12 @@ async function insertTasksForSections(insertedSections) {
     const tasksFromCpp = runSectionTaskManager(insertedSections);
 
     const applyInsert = db.transaction(async (tx, rows) => {
-        const insertTask = tx.prepare(`
-            INSERT INTO tasks (section_id, priority, deadline, status)
-            VALUES (?, ?, NULL, ?)
-        `);
-        const out = [];
-        for (const t of rows) {
-            const info = await insertTask.run(t.section_id, t.priority, t.status);
-            out.push({ id: info.lastInsertRowid, ...t });
-        }
-        return out;
+        // All tasks in one database round trip, not one per task.
+        const results = await tx.batch(rows.map((t) => ({
+            sql: `INSERT INTO tasks (section_id, priority, deadline, status) VALUES (?, ?, NULL, ?)`,
+            args: [t.section_id, t.priority, t.status]
+        })));
+        return rows.map((t, i) => ({ id: results[i].lastInsertRowid, ...t }));
     });
 
     return applyInsert(tasksFromCpp);
@@ -653,12 +649,13 @@ const material = await materialOwnedByUser(materialId, req.user.id);
 const applyPagesAndSections = db.transaction(async (tx) => {
             await tx.prepare(`DELETE FROM material_pages WHERE material_id = ?`).run(materialId);
 
-            const insertPage = tx.prepare(`
-                INSERT INTO material_pages (material_id, page_number, content)
-                VALUES (?, ?, ?)
-            `);
-            for (const p of pages) {
-                await insertPage.run(materialId, p.page_number, p.content);
+            // Pages go in 100 per database round trip, not one each - a
+            // 245-page PDF used to wait for 245 of them.
+            for (let i = 0; i < pages.length; i += 100) {
+                await tx.batch(pages.slice(i, i + 100).map((p) => ({
+                    sql: `INSERT INTO material_pages (material_id, page_number, content) VALUES (?, ?, ?)`,
+                    args: [materialId, p.page_number, p.content]
+                })));
             }
 
             const oldSectionIds = (await tx.prepare(`
@@ -697,26 +694,14 @@ const applyPagesAndSections = db.transaction(async (tx) => {
                 await tx.prepare(`DELETE FROM sections WHERE id IN (${sectionPlaceholders})`).run(...oldSectionIds);
             }
 
-            const insertSection = tx.prepare(`
-                INSERT INTO sections
-                    (course_id, material_id, title, start_page, end_page, estimated_minutes, difficulty)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `);
-
-            const out = [];
-            for (const s of detectedSections) {
-                const info = await insertSection.run(
-                    material.course_id,
-                    materialId,
-                    s.title,
-                    s.start_page,
-                    s.end_page,
-                    s.estimated_minutes,
-                    s.difficulty
-                );
-                out.push({ id: info.lastInsertRowid, ...s });
-            }
-            return out;
+            // All sections in one database round trip, not one each.
+            const results = await tx.batch(detectedSections.map((s) => ({
+                sql: `INSERT INTO sections
+                          (course_id, material_id, title, start_page, end_page, estimated_minutes, difficulty)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                args: [material.course_id, materialId, s.title, s.start_page, s.end_page, s.estimated_minutes, s.difficulty]
+            })));
+            return detectedSections.map((s, i) => ({ id: results[i].lastInsertRowid, ...s }));
         });
 
         const insertedSections = await applyPagesAndSections();

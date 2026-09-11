@@ -66,10 +66,34 @@ function makeStatement(execTarget, sql) {
   };
 }
 
+// Runs several statements in ONE database round trip instead of one per
+// statement - for writing many rows at once (schedule sessions, a PDF's
+// pages/sections/tasks). Against the hosted database every round trip costs
+// real time, so a 40-row insert used to wait for 40 of them.
+// statements: [{ sql, args }]. Returns [{ changes, lastInsertRowid }] in the
+// same order.
+function makeBatch(execTarget, inTransaction) {
+  return async (statements) => {
+    if (statements.length === 0) return [];
+    const results = inTransaction
+      ? await execTarget.batch(statements)
+      : await execTarget.batch(statements, 'write');
+    return results.map((res) => ({
+      changes: Number(res.rowsAffected),
+      lastInsertRowid:
+        res.lastInsertRowid === undefined || res.lastInsertRowid === null
+          ? undefined
+          : Number(res.lastInsertRowid)
+    }));
+  };
+}
+
 const db = {
   prepare(sql) {
     return makeStatement(client, sql);
   },
+
+  batch: makeBatch(client, false),
 
   // Async replacement for better-sqlite3's synchronous `db.transaction(fn)`.
   // better-sqlite3 usage was:
@@ -83,7 +107,7 @@ const db = {
   transaction(fn) {
     return async (...callArgs) => {
       const tx = await client.transaction('write');
-      const txDb = { prepare: (sql) => makeStatement(tx, sql) };
+      const txDb = { prepare: (sql) => makeStatement(tx, sql), batch: makeBatch(tx, true) };
       try {
         const result = await fn(txDb, ...callArgs);
         await tx.commit();

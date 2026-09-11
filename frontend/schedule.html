@@ -809,7 +809,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-      const authData = await fetchJSON('/api/auth/me');
+      // The sign-in check and the page's data load at the same time rather
+      // than one after the other - every request is a full server round trip.
+      const [authData] = await Promise.all([fetchJSON('/api/auth/me'), loadPreferences(), loadSchedule()]);
       if (!authData) return;
       const user = authData.user;
       if (user) {
@@ -817,7 +819,6 @@
         document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
       }
 
-      await Promise.all([loadPreferences(), loadSchedule()]);
       renderWeeklyView();
     });
   </script>

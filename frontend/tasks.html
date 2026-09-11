@@ -95,6 +95,9 @@
           <p class="text-sm text-slate-500 font-medium">Select any prioritized study module to start an active focus timer session immediately.</p>
         </div>
         <div class="flex items-center gap-2">
+          <button type="button" id="regenerateScheduleBtn" onclick="regenerateSchedule()" title="Rebuild your schedule from your tasks' current deadlines, priorities and durations" class="btn btn-secondary btn-sm whitespace-nowrap">
+            ↻ Regenerate Schedule
+          </button>
           <button type="button" onclick="openAddTaskModal()" class="btn btn-primary btn-sm whitespace-nowrap">
             + Add Task
           </button>
@@ -324,6 +327,10 @@
           <label class="block text-xs font-semibold text-slate-700 mb-1">Deadline (optional)</label>
           <input type="date" id="editTaskDeadline" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
         </div>
+        <label class="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
+          <input type="checkbox" id="editTaskRegenerate" class="w-4 h-4 accent-blue-600 cursor-pointer" checked>
+          Update my schedule with these changes
+        </label>
         <p id="editTaskError" class="hidden text-xs text-red-600 font-medium"></p>
       </div>
 
@@ -1265,6 +1272,9 @@
     // multiple scheduled sessions has more than one card (see occKey()),
     // but they all edit/delete together since they're the same task. ----
     let editingTaskId = null;
+    // The priority the edit form opened with - only sent back if the user
+    // actually changed it (see submitEditTask()).
+    let editingInitialPriority = null;
 
     // allTasksCache's `priority` is the raw numeric value tasks.js stores
     // (low/medium/high map to 20/45/70, and a PDF-derived task can carry
@@ -1285,6 +1295,30 @@
       return closest;
     }
 
+    // Rebuild the schedule from every task's current deadline, priority and
+    // duration (the same C++ scheduler the Schedule page's "Regenerate Week"
+    // runs), then show the new sessions here.
+    async function regenerateSchedule() {
+      const btn = document.getElementById('regenerateScheduleBtn');
+      const label = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = '↻ Regenerating…'; }
+      try {
+        const data = await fetchJSON('/api/schedule/generate', { method: 'POST' });
+        if (!data || data.success === false) {
+          alert('Could not regenerate the schedule: ' + ((data && data.error) || 'please try again.'));
+        } else if (data.warnings && data.warnings.length) {
+          alert(`Schedule updated, but ${data.warnings.length} session(s) didn't fit into your study hours:\n\n` +
+            data.warnings.slice(0, 3).join('\n'));
+        }
+      } catch (err) {
+        alert('Could not regenerate the schedule. Please try again.');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+        await loadTasks();
+        renderTasks();
+      }
+    }
+
     function openEditTaskModal(taskId) {
       const task = allTasksCache.find(t => Number(t.id) === Number(taskId));
       if (!task) return;
@@ -1293,6 +1327,8 @@
       document.getElementById('editTaskTitle').value = task.title || '';
       document.getElementById('editTaskMinutes').value = task.estimated_minutes || 30;
       document.getElementById('editTaskPriority').value = priorityLabelForNumber(task.priority);
+      editingInitialPriority = document.getElementById('editTaskPriority').value;
+      document.getElementById('editTaskRegenerate').checked = true;
       document.getElementById('editTaskDeadline').value = task.deadline || '';
       document.getElementById('editTaskError').classList.add('hidden');
       document.getElementById('editTaskModal').classList.remove('hidden');
@@ -1332,16 +1368,29 @@
         const res = await fetch(`/api/tasks/${editingTaskId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, estimated_minutes: minutes, priority, deadline })
+          // Priority only when it was actually changed - a PDF task's exact
+          // priority number (e.g. 38) would otherwise be rounded to the
+          // nearest Low/Medium/High on every save, even a deadline-only edit.
+          body: JSON.stringify({
+            title,
+            estimated_minutes: minutes,
+            deadline,
+            ...(priority !== editingInitialPriority ? { priority } : {})
+          })
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
           throw new Error(data.error || 'Could not save changes.');
         }
 
+        const regenerate = document.getElementById('editTaskRegenerate').checked;
         closeEditTaskModal();
-        await loadTasks();
-        renderTasks();
+        if (regenerate) {
+          await regenerateSchedule();
+        } else {
+          await loadTasks();
+          renderTasks();
+        }
       } catch (err) {
         errorEl.textContent = err.message || 'Something went wrong saving the task.';
         errorEl.classList.remove('hidden');
@@ -1389,16 +1438,15 @@
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
-      // Sync user profile
-      const authData = await fetchJSON('/api/auth/me');
+      // Sync user profile - at the same time as the page's data rather than
+      // before it (every request is a full round trip to the server).
+      const [authData] = await Promise.all([fetchJSON('/api/auth/me'), loadCourses(), loadTasks()]);
       if (!authData) return; // fetchJSON already redirected to /login
       const user = authData.user;
       if (user) {
         document.getElementById('userName').textContent = user.name || 'Student';
         document.getElementById('avatarLetter').textContent = (user.name ? user.name.charAt(0) : 'S').toUpperCase();
       }
-
-      await Promise.all([loadCourses(), loadTasks()]);
       populateCourseFilter();
       renderTasks();
 

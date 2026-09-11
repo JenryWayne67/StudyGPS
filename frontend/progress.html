@@ -234,7 +234,14 @@
       //    hardcoded placeholder "Alex Johnson" no matter who was signed in.
       // ==========================================
 
-      const authData = await fetchJSON('/api/auth/me');
+      // The sign-in check and the page's data (step 1 below) load at the
+      // same time rather than one after the other - every request is a full
+      // round trip to the server.
+      const [authData, sessionsData, progressData] = await Promise.all([
+        fetchJSON('/api/auth/me'),
+        fetchJSON('/api/study-sessions'),
+        fetchJSON('/api/progress')
+      ]);
       if (!authData) return; // fetchJSON already redirected to /login
       const currentUser = authData.user;
       if (currentUser) {
@@ -250,10 +257,6 @@
       //    to show).
       // ==========================================
 
-      const [sessionsData, progressData] = await Promise.all([
-        fetchJSON('/api/study-sessions'),
-        fetchJSON('/api/progress')
-      ]);
       if (!sessionsData || !progressData) return; // fetchJSON already redirected to /login
 
       const sessions = sessionsData.sessions || [];

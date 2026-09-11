@@ -21,6 +21,7 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { db, client } = require('./backend/lib/db');
 const { TursoSessionStore } = require('./backend/lib/sessionStore');
+const { getCachedUser, cacheUser, forgetCachedUser } = require('./backend/lib/userCache');
 const authRoutes = require('./backend/routes/auth');
 const studySessionRoutes = require('./backend/routes/studySessions');
 const courseRoutes = require('./backend/routes/courses');
@@ -241,9 +242,18 @@ passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
+// deserializeUser runs on EVERY logged-in request - the row is served from
+// a short-lived memory cache (backend/lib/userCache.js) instead of a
+// database round trip each time.
 passport.deserializeUser((id, done) => {
+  const cached = getCachedUser(id);
+  if (cached) return done(null, cached);
   db.prepare(`SELECT id, google_id, name, email FROM users WHERE id = ?`).get(id)
-    .then((dbUser) => done(null, dbUser || null))
+    .then((dbUser) => {
+      if (dbUser) cacheUser(id, dbUser);
+      else forgetCachedUser(id);
+      done(null, dbUser || null);
+    })
     .catch((err) => done(err));
 });
 
@@ -308,7 +318,22 @@ app.use('/api/account', accountRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 // Serve static frontend assets
-app.use(express.static(frontendPath));
+// Browser caching for static files. Every request to the Render server is a
+// ~0.3 s round trip, and with Express's default (max-age=0) every page load
+// re-checked every stylesheet, script and image. HTML is still re-checked
+// each time so an update shows up right away; CSS/JS are reused for an
+// hour, images for 30 days.
+app.use(express.static(frontendPath, {
+  setHeaders(res, filePath) {
+    if (/\.(png|jpe?g|gif|svg|ico|webp)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=2592000');
+    } else if (/\.(css|js)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 // API health endpoint
 app.get('/api/health', (req, res) => {
