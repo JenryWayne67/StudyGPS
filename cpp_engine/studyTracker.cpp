@@ -1,10 +1,5 @@
-// ============================================================
-//  StudyGPS - cpp_engine/studyTracker.cpp
-//  Study session tracking logic (no UI timer here).
-//  The frontend will later call: Start / Pause / Resume / Finish.
-//
-//  Build: g++ -std=c++17 studyTracker.cpp -o studyTracker
-// ============================================================
+// studyTracker.cpp - records one study session: planned vs. actual minutes and status.
+// Usage: studyTracker.exe <task_id> <task_name> <planned_minutes> <actual_seconds>
 
 #include <iostream>
 #include <string>
@@ -13,49 +8,44 @@
 #include <iomanip>
 #include <sstream>
 
-// Task status pipeline:  Not Started -> In Progress -> Completed
+// Not Started -> In Progress -> Completed
 enum class TaskStatus {
     NotStarted,
     InProgress,
     Completed
 };
 
-// Plain data holder that mirrors the `study_sessions` table
-// (id, task_id, planned_minutes, actual_minutes, start_time, end_time, completed)
+// One row for the study_sessions table.
 struct StudySessionRecord {
     int         taskId;
     int         plannedMinutes;
     int         actualMinutes;
     std::string startTime;   // "YYYY-MM-DD HH:MM:SS"
-    std::string endTime;     // "YYYY-MM-DD HH:MM:SS"
-    int         completed;   // 0 or 1
+    std::string endTime;
+    int         completed;
 };
 
 class StudySession {
 private:
-    // ---- Task data (input) ----
     int         taskId;
     std::string taskName;
     int         plannedDurationMinutes;
     TaskStatus  status;
 
-    // ---- Elapsed-time measurement (monotonic, immune to clock changes) ----
-    std::chrono::steady_clock::time_point segmentStart;  // start of current running segment
-    long long   totalActiveSeconds;                      // sum of finished segments
+    std::chrono::steady_clock::time_point segmentStart;
+    long long   totalActiveSeconds;                      // finished segments only; paused time excluded
 
-    // ---- Wall-clock stamps (what actually goes into the database) ----
     std::chrono::system_clock::time_point sessionStartWall;
     std::chrono::system_clock::time_point sessionEndWall;
     bool        hasStartStamp;
     bool        hasEndStamp;
 
-    // ---- Timer state ----
-    bool        isRunning;   // session started and not yet finished
+    bool        isRunning;
     bool        isPaused;
 
-    int         actualMinutes; // computed at finishSession()
+    int         actualMinutes;
 
-    // Format a system_clock time point as "YYYY-MM-DD HH:MM:SS"
+    // "YYYY-MM-DD HH:MM:SS" in local time.
     static std::string formatTime(const std::chrono::system_clock::time_point& tp) {
         std::time_t t = std::chrono::system_clock::to_time_t(tp);
         std::tm tmBuf{};
@@ -69,10 +59,9 @@ private:
         return oss.str();
     }
 
-    // Internal setter used by the state machine
     void setStatus(TaskStatus newStatus) { status = newStatus; }
 
-    // Close the currently running segment and add it to the total
+    // Adds the running segment to totalActiveSeconds.
     void accumulateCurrentSegment() {
         auto now = std::chrono::steady_clock::now();
         totalActiveSeconds +=
@@ -80,7 +69,6 @@ private:
     }
 
 public:
-    // Constructor: Task ID + Task name + Planned study duration
     StudySession(int id, const std::string& name, int plannedMinutes)
         : taskId(id),
           taskName(name),
@@ -93,9 +81,6 @@ public:
           isPaused(false),
           actualMinutes(0) {}
 
-    // ---------------------------------------------------
-    // 1. startSession() - begin the study session
-    // ---------------------------------------------------
     bool startSession() {
         if (isRunning) {
             std::cout << "!! Session is already running.\n";
@@ -121,9 +106,6 @@ public:
         return true;
     }
 
-    // ---------------------------------------------------
-    // 2. pauseSession() - stop counting time
-    // ---------------------------------------------------
     bool pauseSession() {
         if (!isRunning) {
             std::cout << "!! Cannot pause: no active session.\n";
@@ -140,9 +122,6 @@ public:
         return true;
     }
 
-    // ---------------------------------------------------
-    // 3. resumeSession() - continue counting time
-    // ---------------------------------------------------
     bool resumeSession() {
         if (!isRunning) {
             std::cout << "!! Cannot resume: no active session.\n";
@@ -159,9 +138,6 @@ public:
         return true;
     }
 
-    // ---------------------------------------------------
-    // 4. finishSession() - end session, compute time, update status
-    // ---------------------------------------------------
     bool finishSession() {
         if (!isRunning) {
             std::cout << "!! Cannot finish: no active session.\n";
@@ -177,7 +153,7 @@ public:
         isRunning      = false;
         isPaused       = false;
 
-        actualMinutes  = calculateDuration();   // Calculate Actual Time
+        actualMinutes  = calculateDuration();
         updateTaskStatus();                     // In Progress -> Completed
 
         std::cout << "-> Session finished. Actual study time: "
@@ -185,13 +161,10 @@ public:
         return true;
     }
 
-    // ---------------------------------------------------
-    // 5. calculateDuration() - actual minutes studied
-    //    (paused time is never counted; rounded to nearest minute)
-    // ---------------------------------------------------
+    // Minutes studied so far, rounded to the nearest minute (paused time excluded).
     int calculateDuration() const {
         long long seconds = totalActiveSeconds;
-        if (isRunning && !isPaused) {   // allow a live read mid-session
+        if (isRunning && !isPaused) {
             auto now = std::chrono::steady_clock::now();
             seconds += std::chrono::duration_cast<std::chrono::seconds>(now - segmentStart).count();
         }
@@ -199,24 +172,18 @@ public:
         return static_cast<int>((seconds + 30) / 60);
     }
 
-    // ---------------------------------------------------
-    // 6. updateTaskStatus() - advance the status pipeline
-    //    Not Started -> In Progress -> Completed
-    // ---------------------------------------------------
+    // Advances Not Started -> In Progress -> Completed.
     void updateTaskStatus() {
         switch (status) {
             case TaskStatus::NotStarted: setStatus(TaskStatus::InProgress); break;
             case TaskStatus::InProgress: setStatus(TaskStatus::Completed);  break;
-            case TaskStatus::Completed:  /* terminal state */               break;
+            case TaskStatus::Completed:                                     break;
         }
     }
 
-    // Optional explicit form (e.g. backend restoring a saved session)
     void updateTaskStatus(TaskStatus newStatus) { setStatus(newStatus); }
 
-    // ---------------------------------------------------
-    // Save Study Session -> row for the study_sessions table
-    // ---------------------------------------------------
+    // The row saved to study_sessions.
     StudySessionRecord toRecord() const {
         StudySessionRecord r;
         r.taskId         = taskId;
@@ -228,7 +195,6 @@ public:
         return r;
     }
 
-    // ---- Getters ----
     int         getTaskId()         const { return taskId; }
     std::string getTaskName()       const { return taskName; }
     int         getPlannedMinutes() const { return plannedDurationMinutes; }
@@ -245,7 +211,6 @@ public:
         }
     }
 
-    // ---- Display ----
     void displaySummary() const {
         std::cout << "\n=========================================\n";
         std::cout << "Task: " << taskName << "\n\n";
@@ -257,20 +222,13 @@ public:
         std::cout << "=========================================\n";
     }
 
-    // Test hook: inject elapsed study time without waiting in real time.
-    // Remove (or ignore) once the real frontend timer drives the session.
+    // Adds study time the frontend's timer already measured.
     void addElapsedSecondsForTesting(long long seconds) { totalActiveSeconds += seconds; }
 };
 
-// ============================================================
-//  Demo / flow simulation
-//  Scheduled Task -> Start -> Study -> Pause/Resume -> Finish
-//  -> Calculate Actual Time -> Update Task Status -> Save
-// ============================================================
+// Runs a session with the frontend-measured seconds and prints
+// task_id= planned_minutes= actual_minutes= completed= for Node.js.
 int main(int argc, char* argv[]) {
-
-    // Expected:
-    // studyTracker.exe <task_id> <task_name> <planned_minutes> <actual_seconds>
 
     if (argc != 5) {
         std::cerr
@@ -290,24 +248,16 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Create the C++ study session.
         StudySession session(taskId, taskName, plannedMinutes);
 
-        // Start the session.
         session.startSession();
 
-        // For this integration step, the frontend has already
-        // measured the active study time.
         session.addElapsedSecondsForTesting(actualSeconds);
 
-        // Finish and calculate actual study time.
         session.finishSession();
 
-        // Convert to database-ready record.
         StudySessionRecord row = session.toRecord();
 
-        // IMPORTANT:
-        // Output only machine-readable data for Node.js.
         std::cout
             << "task_id=" << row.taskId
             << " planned_minutes=" << row.plannedMinutes

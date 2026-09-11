@@ -1,36 +1,5 @@
-// scheduler.cpp
-//
-// Generates a study schedule from a set of tasks and a set of available
-// time windows. No UI / database code here — pure scheduling algorithm.
-//
-// dayIndex = days from today (0 = today, 1 = tomorrow, ...). Callers
-// convert real calendar dates into this before calling in.
-//
-// Every study session is exactly sessionLengthMinutes long - the user's
-// preferred session length, never a leftover sliver. All page-range tasks
-// from the same material form one continuous, page-ordered stream of
-// reading that gets cut into sessions, so:
-//   - a session can cover several short sections back to back (e.g.
-//     pages 4-4 and 5-18 in one 50-minute session), instead of a 1-page
-//     section becoming its own 5-minute session;
-//   - a long section can span several sessions;
-//   - pages of one material are always studied in order, whatever the
-//     individual sections' priorities are.
-// A session never mixes two different materials. Tasks without a page
-// range or material (e.g. custom tasks) are streams of their own.
-//
-// Exception: when the user typed a duration themselves (a custom task, or
-// a section whose minutes they edited), that stream keeps its exact total
-// minutes - full-length sessions, then one shorter final session for the
-// remainder - instead of being rounded to whole sessions.
-//
-// Lecture files of the same course are studied one after another: a
-// course's next PDF (in upload order) only starts once every section of
-// the previous one has been scheduled.
-//
-// Different courses take turns (HTML, CSS, Networking, HTML, ...) so no
-// single course fills the calendar while the others wait; a course with
-// work due within kUrgentDays days gets extra turns until that work is in.
+// scheduler.cpp - builds the study schedule from tasks and free time slots.
+// Sessions are the preferred length, PDFs go in page order, courses take turns.
 
 #include <algorithm>
 #include <cctype>
@@ -41,34 +10,17 @@
 #include <string>
 #include <vector>
 
-// ---------------------------------------------------------------------
-// Input data structures
-// ---------------------------------------------------------------------
-
 struct Task {
     std::string id;
     std::string name;
     int estimatedMinutes;
-    int priority;           // higher = more important (e.g. 0-100)
-    int deadlineDayIndex;   // days from today the task is due by
-    int difficulty = 0;     // optional tie-breaker, higher = harder (0 if unused)
-
-    // Optional reading-page range this task covers. Use -1/-1 for tasks
-    // that don't correspond to a page range (e.g. a practice-problem set).
+    int priority;
+    int deadlineDayIndex;   // days from today
+    int difficulty = 0;
     int startPage = -1;
     int endPage = -1;
-
-    // Which PDF/material this task's section came from (empty if none).
-    // Tasks sharing a materialId are scheduled as one page-ordered stream.
     std::string materialId;
-
-    // True when the user set this task's duration themselves. A stream
-    // containing one keeps its exact total minutes - see
-    // planStreamSessions().
-    bool exactMinutes = false;
-
-    // Course the task belongs to. All PDFs of one course are scheduled in
-    // sequence (one file finished before the next starts) - see buildChains().
+    bool exactMinutes = false;  // user-set duration, kept exact
     std::string courseId;
 
     bool hasPages() const { return startPage >= 0 && endPage >= startPage; }
@@ -76,24 +28,19 @@ struct Task {
 };
 
 struct TimeSlot {
-    std::string dayLabel;   // e.g. "Monday" — for display only
-    int dayIndex;           // days from today — for ordering/deadline comparison
+    std::string dayLabel;
+    int dayIndex;           // days from today
     int startMinutes;       // minutes since midnight
-    int endMinutes;         // minutes since midnight
+    int endMinutes;
 };
 
 struct SchedulerConfig {
-    int sessionLengthMinutes;   // length of every study session
-    int breakLengthMinutes;     // break inserted after each session
-    int maxDailyMinutes;        // cap on total *study* minutes per day (breaks excluded)
+    int sessionLengthMinutes;
+    int breakLengthMinutes;
+    int maxDailyMinutes;        // study minutes per day, breaks excluded
 };
 
-// ---------------------------------------------------------------------
-// Output data structure — one task's share of one session. A session
-// covering several tasks produces one of these per task, all with the
-// same day/start/end.
-// ---------------------------------------------------------------------
-
+// One task's share of one session; a session covering several tasks yields several.
 struct ScheduledSession {
     std::string taskId;
     std::string taskName;
@@ -101,15 +48,11 @@ struct ScheduledSession {
     int dayIndex;
     int startMinutes;
     int endMinutes;
-    int startPage = -1;   // -1 if the task has no pages
+    int startPage = -1;
     int endPage = -1;
-    int partNumber;       // 1-based; >1 means this task spans several sessions
+    int partNumber;
     int totalParts;
 };
-
-// ---------------------------------------------------------------------
-// Scheduler
-// ---------------------------------------------------------------------
 
 class Scheduler {
 public:
@@ -119,8 +62,6 @@ public:
         : tasks_(std::move(tasks)),
           availableSlots_(std::move(availableSlots)),
           config_(config) {
-        // Slots must be processed in chronological order for "earliest slot
-        // first" placement to make sense.
         std::sort(availableSlots_.begin(), availableSlots_.end(),
                   [](const TimeSlot& a, const TimeSlot& b) {
                       if (a.dayIndex != b.dayIndex) return a.dayIndex < b.dayIndex;
@@ -128,9 +69,8 @@ public:
                   });
     }
 
-    // -------------------------------------------------------------
-    // 1. Generate the final study schedule
-    // -------------------------------------------------------------
+    // Plans each chain's sessions, merges them into one order, then places each in the
+    // earliest slot after the previous one; once a chain's session doesn't fit, the rest waits.
     std::vector<ScheduledSession> generateSchedule() {
         std::vector<ScheduledSession> schedule;
         unscheduledWarnings_.clear();
@@ -146,13 +86,8 @@ public:
                 std::to_string(config_.maxDailyMinutes) + " min) - no session can be scheduled");
         }
 
-        // Each chain's sessions, in the order they must be studied.
         std::vector<std::vector<int>> streams = buildStreams();
         std::vector<std::vector<PlannedSession>> chainSessions;
-        // What takes turns: a course's PDFs take one turn together (they're
-        // studied one after another anyway); every other task - e.g. each
-        // custom task, even though they all live in the same "Personal
-        // Tasks" course - is a subject of its own and takes its own turn.
         std::vector<std::string> chainCourse;
         for (const std::vector<int>& chain : buildChains(streams)) {
             const Task& first = tasks_[streams[chain.front()].front()];
@@ -168,19 +103,9 @@ public:
         }
         std::vector<PlannedSession> ordered = mergeChains(chainSessions, chainCourse);
 
-        // Working copies we consume from as sessions get placed.
         std::vector<TimeSlot> remainingSlots = availableSlots_;
-        std::map<int, int> dailyUsedMinutes; // dayIndex -> minutes used so far
+        std::map<int, int> dailyUsedMinutes;
 
-        // Sessions land on the calendar strictly in `ordered` order: each
-        // goes into the earliest slot with room that starts no earlier than
-        // where the previous session ended. Sessions aren't all the same
-        // length (a custom task's shorter last session), so "earliest slot
-        // with room" alone could drop a short session into a gap before a
-        // longer one placed earlier - putting pages out of order. And once
-        // a session can't be placed, the rest of its chain is skipped too,
-        // so later pages - or a course's next file - never get scheduled
-        // ahead of missing ones.
         int minDay = std::numeric_limits<int>::min();
         int minStart = 0;
         std::vector<bool> chainBlocked(chainSessions.size(), false);
@@ -204,9 +129,6 @@ public:
                                                   piece.partNumber, piece.totalParts));
             }
 
-            // Consume the session and the break after it. A break that
-            // doesn't fit closes the slot rather than letting the next
-            // session start with no break at all.
             minDay = slot.dayIndex;
             minStart = slot.startMinutes + planned.minutes;
             dailyUsedMinutes[slot.dayIndex] += planned.minutes;
@@ -229,21 +151,17 @@ private:
         int totalParts = 1;
     };
 
-    // One block of study, before it's given a time slot.
+    // A block of study before it gets a time slot.
     struct PlannedSession {
-        std::vector<SessionPiece> pieces;  // in page order
-        int minutes = 0;                   // session length (shorter only for an exact stream's last one)
-        int chain = 0;                     // which chain (course sequence) it belongs to
-        int deadline = std::numeric_limits<int>::max(); // earliest deadlineDayIndex among its tasks
-        double score = 0;                  // highest taskScore among its tasks
+        std::vector<SessionPiece> pieces;
+        int minutes = 0;                   // shorter only for an exact stream's last session
+        int chain = 0;
+        int deadline = std::numeric_limits<int>::max();
+        double score = 0;
     };
 
-    // -------------------------------------------------------------
-    // 2. Group tasks into streams: every page-range task of the same
-    //    material in one stream, sorted by page; any other task is a
-    //    stream of its own. Streams keep the input order of their first
-    //    task (the tie-breaker when priorities are equal).
-    // -------------------------------------------------------------
+    // One stream per material with its tasks in page order; any other task is a
+    // stream of its own.
     std::vector<std::vector<int>> buildStreams() const {
         std::vector<std::vector<int>> streams;
         std::map<std::string, size_t> streamByMaterial;
@@ -272,13 +190,8 @@ private:
         return streams;
     }
 
-    // -------------------------------------------------------------
-    // 2b. Group streams into chains that are studied one after another:
-    //    all PDFs of the same course, in upload order - a course's next
-    //    lecture file only starts once the previous one is finished. Any
-    //    other stream (e.g. a custom task) is a chain of its own. Chains
-    //    keep the input order of their first stream (the tie-breaker).
-    // -------------------------------------------------------------
+    // Chains are studied one after another: a course's PDFs in upload order; any
+    // other stream is a chain of its own.
     std::vector<std::vector<int>> buildChains(const std::vector<std::vector<int>>& streams) const {
         std::vector<std::vector<int>> chains;
         std::map<std::string, size_t> chainByCourse;
@@ -306,8 +219,7 @@ private:
         return chains;
     }
 
-    // Upload order of two materials. Their ids are database ids, so compare
-    // them as numbers when both are ("9" before "10").
+    // Upload order: material ids compared as numbers ("9" before "10").
     static bool materialLess(const std::string& a, const std::string& b) {
         auto isNumber = [](const std::string& s) {
             return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
@@ -316,23 +228,8 @@ private:
         return a < b;
     }
 
-    // -------------------------------------------------------------
-    // 3. Cut one stream into sessions.
-    //
-    // Normally every session is exactly `sessionLength` minutes: the
-    // stream's total estimated time T becomes round(T / sessionLength)
-    // sessions (at least one), and the reading is spread evenly across
-    // them - session k covers stream minutes [k*T/n, (k+1)*T/n).
-    //
-    // If the user set any duration in the stream themselves, T is kept
-    // exactly instead: ceil(T / sessionLength) sessions, all full length
-    // except the last, which gets the remainder (70 min -> 50 + 20).
-    //
-    // Either way each task's pages are split in proportion to its minutes,
-    // so every page lands in exactly one session and pages never go
-    // backwards. Positions are kept in units of 1/scale minute so all the
-    // boundaries are exact integers (no floating-point drift).
-    // -------------------------------------------------------------
+    // Cuts a stream into round(T/L) full sessions, or ceil(T/L) with a shorter last one when a
+    // duration is user-set; each task's pages are split by its minutes (integer maths, no drift).
     std::vector<PlannedSession> planStreamSessions(const std::vector<int>& stream, int sessionLength) const {
         long long total = 0;
         bool exact = false;
@@ -342,7 +239,7 @@ private:
         }
 
         long long n, scale;
-        std::vector<long long> bounds; // session s covers [bounds[s], bounds[s+1]), scaled
+        std::vector<long long> bounds;
         if (exact) {
             n = (total + sessionLength - 1) / sessionLength;
             scale = 1;
@@ -353,7 +250,7 @@ private:
             for (long long s = 0; s <= n; ++s) bounds.push_back(s * total);
         }
 
-        std::vector<long long> taskStart, taskLength; // scaled
+        std::vector<long long> taskStart, taskLength;
         long long cursor = 0;
         for (int idx : stream) {
             long long m = std::max(tasks_[idx].estimatedMinutes, 1) * scale;
@@ -384,12 +281,6 @@ private:
                     int from = pageOffsetAt(lo, begin, taskLength[k], task.pageCount());
                     int to = pageOffsetAt(hi, begin, taskLength[k], task.pageCount());
                     if (to <= from) {
-                        // Less than a whole page of this task falls in this
-                        // session. A rounding sliver is dropped (neighbours
-                        // cover the page), but real study time - e.g. a
-                        // 1-page section the user set to 90 minutes running
-                        // into a second session - stays listed, on the page
-                        // it's at.
                         if (hi - lo < kMinPieceMinutes * scale) continue;
                         from = static_cast<int>(std::min<long long>(
                             (lo - begin) * task.pageCount() / taskLength[k], task.pageCount() - 1));
@@ -402,10 +293,6 @@ private:
             }
         }
 
-        // A session can round to zero whole pages when a section's time
-        // estimate is long relative to its page count (e.g. one page
-        // estimated at 3 hours). It's still real study time - keep it on
-        // the page the stream is at when that session starts.
         for (long long s = 0; s < n; ++s) {
             PlannedSession& session = sessions[static_cast<size_t>(s)];
             if (!session.pieces.empty()) continue;
@@ -424,8 +311,6 @@ private:
             session.pieces.push_back(piece);
         }
 
-        // Part numbers per task (a task spanning 3 sessions is part 1/3,
-        // 2/3, 3/3), and each session's score for ordering.
         std::map<int, int> piecesPerTask;
         for (const PlannedSession& session : sessions) {
             for (const SessionPiece& piece : session.pieces) ++piecesPerTask[piece.taskIdx];
@@ -443,37 +328,19 @@ private:
         return sessions;
     }
 
-    // Shortest share of a session (in minutes) that's listed for a task
-    // when it doesn't reach a whole new page.
+    // Shortest partial-page share of a session that is still listed.
     static constexpr long long kMinPieceMinutes = 10;
 
-    // Work due within this many days gets extra turns - see mergeChains().
+    // Work due within this many days gets extra turns.
     static constexpr int kUrgentDays = 3;
 
-    // Whole pages of a task completed by scaled stream position `at`
-    // (rounded half up), for a task occupying [begin, begin + length).
+    // Whole pages of a task done at scaled position `at` (rounded half up).
     static int pageOffsetAt(long long at, long long begin, long long length, int pageCount) {
         return static_cast<int>((2 * (at - begin) * pageCount + length) / (2 * length));
     }
 
-    // -------------------------------------------------------------
-    // 4. Merge all chains into one session order.
-    //
-    //    Courses take turns: the next session goes to the course that has
-    //    waited longest since its last turn, so HTML, CSS and Networking
-    //    alternate instead of one course filling the calendar first. Each
-    //    chain's own sessions stay in order (pages in order, and a course's
-    //    files one after another).
-    //
-    //    Urgent work gets extra turns: while any course has a session due
-    //    within kUrgentDays days, those sessions go first, closest deadline
-    //    first. A session counts as due as early as anything after it in its
-    //    chain (the pages before an urgent chapter have to come first).
-    //
-    //    Ties go to the more important session (priority/urgency/difficulty
-    //    score, again counting what follows it), then to the chain listed
-    //    first.
-    // -------------------------------------------------------------
+    // Courses take turns, longest-waiting first; work due within kUrgentDays goes first
+    // (closest deadline first). Each chain's own sessions stay in order.
     std::vector<PlannedSession> mergeChains(std::vector<std::vector<PlannedSession>>& chains,
                                             const std::vector<std::string>& chainCourse) const {
         std::vector<std::vector<double>> score(chains.size());
@@ -491,14 +358,13 @@ private:
             }
         }
 
-        std::map<std::string, long long> lastTurn; // course -> turn number of its latest session
+        std::map<std::string, long long> lastTurn;
         auto turnOf = [&](size_t i) {
             auto it = lastTurn.find(chainCourse[i]);
             return it == lastTurn.end() ? -1LL : it->second;
         };
         std::vector<size_t> next(chains.size(), 0);
 
-        // Is chain a's next session a better pick than chain b's?
         auto better = [&](size_t a, size_t b) {
             const int dueA = dueBy[a][next[a]], dueB = dueBy[b][next[b]];
             const bool urgentA = dueA <= kUrgentDays, urgentB = dueB <= kUrgentDays;
@@ -523,11 +389,7 @@ private:
         return ordered;
     }
 
-    // -------------------------------------------------------------
-    // 5. Find the first available slot with room for `neededMinutes`
-    //    that starts no earlier than (minDay, minStart).
-    //    Returns an index into `slots`, or -1 if none fits.
-    // -------------------------------------------------------------
+    // Index of the first slot at/after (minDay, minStart) with room left, or -1.
     int findAvailableSlot(const std::vector<TimeSlot>& slots,
                            const std::map<int, int>& dailyUsedMinutes,
                            int neededMinutes, int minDay, int minStart) const {
@@ -545,9 +407,6 @@ private:
         return -1;
     }
 
-    // -------------------------------------------------------------
-    // 6. Build one finalized schedule record
-    // -------------------------------------------------------------
     ScheduledSession createSchedule(const Task& task, const TimeSlot& slot, int minutes,
                                      int startPage, int endPage, int partNumber, int totalParts) const {
         ScheduledSession s;
@@ -576,15 +435,14 @@ private:
         return out;
     }
 
-    // Combines priority, deadline urgency, and difficulty into one score.
-    // Weights are just reasonable defaults for sample data — tune freely.
+    // Priority, deadline urgency and difficulty combined into one number.
     double taskScore(const Task& task) const {
         constexpr double kPriorityWeight = 1.0;
         constexpr double kUrgencyWeight = 40.0;
         constexpr double kDifficultyWeight = 0.5;
 
         int daysUntilDeadline = std::max(task.deadlineDayIndex, 0);
-        double urgency = 1.0 / (daysUntilDeadline + 1); // closer deadline -> bigger number
+        double urgency = 1.0 / (daysUntilDeadline + 1);
 
         return task.priority * kPriorityWeight +
                urgency * kUrgencyWeight +
@@ -596,34 +454,6 @@ private:
     SchedulerConfig config_;
     std::vector<std::string> unscheduledWarnings_;
 };
-
-// ---------------------------------------------------------------------
-// CLI mode - same "engine as a small stdin/stdout filter" pattern as
-// sectionTaskManager.cpp / studyTracker.cpp: no DB/JSON code here,
-// Node.js (backend/routes/schedule.js) owns all I/O and just pipes
-// real task/time-slot rows in and reads scheduled sessions back out.
-//
-// Input (stdin, one record per line, pipe-delimited; any order):
-//   CONFIG|sessionLengthMinutes|breakLengthMinutes|maxDailyMinutes
-//   TASK|id|name|estimatedMinutes|priority|deadlineDayIndex|difficulty|startPage|endPage|materialId|exactMinutes|courseId
-//   SLOT|dayLabel|dayIndex|startMinutes|endMinutes
-// materialId may be empty (two consecutive pipes). exactMinutes is 1 when
-// the user set the task's duration themselves (optional, default 0).
-// courseId (optional) puts a course's PDFs in sequence, in materialId order.
-//
-// Output (stdout, one line per task per session, key=value):
-//   task_id=<id> day_index=<n> day_label=<label> start_minutes=<n>
-//   end_minutes=<n> start_page=<n> end_page=<n> part=<n> total_parts=<n>
-// A session covering several tasks prints one line per task, all with the
-// same day_index/start_minutes/end_minutes.
-// Sessions that couldn't be placed are reported as: warning=<message>
-//
-// Build:
-//   g++ -std=c++17 -O2 -o scheduler cpp_engine/scheduler.cpp
-//
-// Run (manual test):
-//   printf "CONFIG|50|10|120\nTASK|1|Logical Operators|50|80|2|3|7|10\nSLOT|Monday|0|1080|1260\n" | ./scheduler
-// ---------------------------------------------------------------------
 
 static std::vector<std::string> splitPipeDelimited(const std::string& line) {
     std::vector<std::string> fields;
@@ -643,9 +473,11 @@ static std::string trimLineEndings(const std::string& rawLine) {
     return line;
 }
 
+// stdin: CONFIG|len|break|dailyMax, TASK|id|name|min|prio|due|diff|p1|p2|material|exact|course, SLOT|label|day|start|end
+// stdout: one key=value line per session piece, then warning= lines for sessions that didn't fit.
 int main() {
-    SchedulerConfig config{/*sessionLengthMinutes=*/50, /*breakLengthMinutes=*/10,
-                            /*maxDailyMinutes=*/120};
+    SchedulerConfig config{50, 10,
+                            120};
     std::vector<Task> tasks;
     std::vector<TimeSlot> slots;
 
@@ -672,8 +504,6 @@ int main() {
                 task.difficulty = std::stoi(fields[6]);
                 task.startPage = std::stoi(fields[7]);
                 task.endPage = std::stoi(fields[8]);
-                // materialId is optional (field 9) for backward compatibility
-                // with older callers/sample data that don't send it yet.
                 task.materialId = (fields.size() >= 10) ? fields[9] : "";
                 task.exactMinutes = (fields.size() >= 11) && fields[10] == "1";
                 task.courseId = (fields.size() >= 12) ? fields[11] : "";
@@ -686,9 +516,6 @@ int main() {
                 slot.endMinutes = std::stoi(fields[4]);
                 slots.push_back(slot);
             }
-            // Unknown record types / malformed lines are skipped rather
-            // than aborting the whole batch, same tolerance as the other
-            // engines.
         } catch (const std::exception&) {
             continue;
         }

@@ -1,22 +1,5 @@
-// ============================================================
-//  StudyGPS - cpp_engine/sectionTaskManager.cpp
-//
-//  Turns detected PDF sections (title, page range, estimated minutes,
-//  difficulty) into StudyGPS tasks (priority + status). No DB/JSON code
-//  here - Node.js (materials.js) owns I/O.
-//
-//  Input  (stdin, one section per line, pipe-delimited):
-//      section_id|title|start_page|end_page|estimated_minutes|difficulty
-//
-//  Output (stdout, one task per line, key=value):
-//      section_id=<id> priority=<n> status=Not Started
-//
-//  Build:
-//  g++ -std=c++17 -O2 -o sectionTaskManager cpp_engine/sectionTaskManager.cpp
-//
-//  Run (manual test):
-//  echo "1|Class and Object|2|23|66|1" | ./sectionTaskManager
-// ============================================================
+// sectionTaskManager.cpp - turns detected PDF sections into tasks with a priority.
+// stdin: id|title|start_page|end_page|minutes|difficulty; stdout: section_id= priority= status= lines.
 
 #include <iostream>
 #include <sstream>
@@ -24,10 +7,7 @@
 #include <vector>
 #include <algorithm>
 
-// ---------------------------------------------------------------------
-// Input data structure - mirrors one row coming from the `sections` table
-// ---------------------------------------------------------------------
-
+// One row of the sections table.
 struct SectionInput {
     int         id = 0;
     std::string title;
@@ -41,19 +21,12 @@ struct SectionInput {
     }
 };
 
-// ---------------------------------------------------------------------
-// Output data structure - one row to insert into the `tasks` table
-// ---------------------------------------------------------------------
-
+// One row for the tasks table.
 struct TaskOutput {
     int sectionId = 0;
     int priority = 0;
     std::string status = "Not Started";
 };
-
-// ---------------------------------------------------------------------
-// Parsing helpers
-// ---------------------------------------------------------------------
 
 static std::vector<std::string> splitPipeDelimited(const std::string& line) {
     std::vector<std::string> fields;
@@ -65,8 +38,8 @@ static std::vector<std::string> splitPipeDelimited(const std::string& line) {
     return fields;
 }
 
+// Parses one input line; false for blank or malformed lines.
 static bool parseSectionLine(const std::string& rawLine, SectionInput& out) {
-    // Trim trailing \r (in case input came from a Windows-edited file)
     std::string line = rawLine;
     while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
         line.pop_back();
@@ -89,14 +62,7 @@ static bool parseSectionLine(const std::string& rawLine, SectionInput& out) {
     return true;
 }
 
-// ---------------------------------------------------------------------
-// Section -> Task processing
-// ---------------------------------------------------------------------
-//
-// Priority = difficulty (weighted heavily) + capped page count, so
-// longer/harder sections rise to the top. Deadline scheduling is
-// scheduler.cpp's job, not this file's.
-
+// Priority = difficulty x 10 + page count (capped at 20), so longer/harder sections rank higher.
 class SectionTaskManager {
 public:
     static TaskOutput processSection(const SectionInput& section) {
@@ -118,10 +84,7 @@ public:
     }
 };
 
-// ---------------------------------------------------------------------
-// main() - read sections from stdin, write tasks to stdout
-// ---------------------------------------------------------------------
-
+// Reads sections from stdin and writes one task line each; malformed lines are skipped.
 int main() {
     std::string line;
     int processedCount = 0;
@@ -129,8 +92,6 @@ int main() {
     while (std::getline(std::cin, line)) {
         SectionInput section;
         if (!parseSectionLine(line, section)) {
-            // Skip malformed/blank lines rather than aborting the whole
-            // batch - Node.js only cares about well-formed output lines.
             continue;
         }
 

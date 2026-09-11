@@ -1,14 +1,5 @@
-// progressReport.cpp
-//
-// Calculates a student's study progress based on
-// tasks, planned/actual study time, and courses.
-//
-// Build:
-// g++ -std=c++17 -O2 -o progressReport progressReport.cpp
-//
-// Run:
-// ./progressReport
-//
+// progressReport.cpp - study progress: completion, study time, schedule adherence, per course.
+// stdin: TASK|name|course|status|planned|actual lines; stdout: REPORT and COURSE key=value lines.
 
 #include <iostream>
 #include <vector>
@@ -20,14 +11,6 @@
 
 using namespace std;
 
-
-// ---------------------------------------------------------
-// TaskStatus
-// ---------------------------------------------------------
-//
-// An enum instead of raw strings, so a typo like "Completd"
-// fails to compile instead of silently being counted as
-// nothing.
 
 enum class TaskStatus
 {
@@ -48,10 +31,6 @@ string taskStatusToString(TaskStatus status)
 }
 
 
-// ---------------------------------------------------------
-// Task
-// ---------------------------------------------------------
-
 struct Task
 {
     string name;
@@ -62,18 +41,13 @@ struct Task
 };
 
 
-// ---------------------------------------------------------
-// Formatting helpers
-// ---------------------------------------------------------
-
-// Rounds to 1 decimal place (e.g. 66.666.. -> 66.7).
+// Rounds to 1 decimal place (66.666 -> 66.7).
 double roundTo1Decimal(double value)
 {
     return round(value * 10.0) / 10.0;
 }
 
-// Formats a percentage, dropping ".0" when the value is a
-// whole number (80.0% -> "80%", 66.7% -> "66.7%").
+// "80%" for whole numbers, "66.7%" otherwise.
 string formatPercentage(double value)
 {
     double rounded = roundTo1Decimal(value);
@@ -93,14 +67,6 @@ string formatPercentage(double value)
 }
 
 
-// ---------------------------------------------------------
-// CourseProgress
-// ---------------------------------------------------------
-//
-// Return type for calculateCourseProgress(), so the result
-// can be reused (printed, exported, tested) instead of being
-// tied to cout.
-
 struct CourseProgress
 {
     string course;
@@ -110,13 +76,6 @@ struct CourseProgress
 };
 
 
-// ---------------------------------------------------------
-// TaskProgress
-// ---------------------------------------------------------
-//
-// Return type for calculateTaskProgress(), replacing the
-// out-parameter version.
-
 struct TaskProgress
 {
     int notStarted;
@@ -124,10 +83,6 @@ struct TaskProgress
     int completed;
 };
 
-
-// ---------------------------------------------------------
-// ProgressReport Class
-// ---------------------------------------------------------
 
 class ProgressReport
 {
@@ -138,16 +93,11 @@ private:
 
 public:
 
-    // Constructor
     ProgressReport(const vector<Task>& taskList)
     {
         tasks = taskList;
     }
 
-
-    // -----------------------------------------------------
-    // 1. Calculate Completion Rate
-    // -----------------------------------------------------
 
     double calculateCompletionRate() const
     {
@@ -171,10 +121,6 @@ public:
     }
 
 
-    // -----------------------------------------------------
-    // 2. Calculate Total Study Time
-    // -----------------------------------------------------
-
     int calculateTotalStudyTime() const
     {
         int totalMinutes = 0;
@@ -188,10 +134,7 @@ public:
     }
 
 
-    // -----------------------------------------------------
-    // 3. Calculate Schedule Adherence
-    // -----------------------------------------------------
-
+    // Actual minutes as a percentage of planned minutes.
     double calculateScheduleAdherence() const
     {
         int plannedTime = 0;
@@ -212,10 +155,6 @@ public:
             (static_cast<double>(actualTime) / plannedTime) * 100.0);
     }
 
-
-    // -----------------------------------------------------
-    // 4. Calculate Task Progress
-    // -----------------------------------------------------
 
     TaskProgress calculateTaskProgress() const
     {
@@ -241,18 +180,11 @@ public:
     }
 
 
-    // -----------------------------------------------------
-    // 5. Calculate Course Progress
-    // -----------------------------------------------------
-    //
-    // Returns the data instead of printing it, so the caller
-    // decides how (or whether) to display it.
-
+    // Completion per course, courses in first-seen order.
     vector<CourseProgress> calculateCourseProgress() const
     {
         vector<string> courses;
 
-        // Find unique courses, in first-seen order.
         for (const Task& task : tasks)
         {
             bool exists = false;
@@ -273,7 +205,6 @@ public:
         }
 
 
-        // Calculate progress for each course.
         vector<CourseProgress> results;
 
         for (const string& course : courses)
@@ -309,10 +240,6 @@ public:
         return results;
     }
 
-
-    // -----------------------------------------------------
-    // 6. Generate Complete Report
-    // -----------------------------------------------------
 
     void generateReport() const
     {
@@ -365,28 +292,11 @@ public:
 };
 
 
-// ---------------------------------------------------------
-// Main - real stdin/stdout CLI
-// ---------------------------------------------------------
-//
-// Input (stdin), one task per line:
-//   TASK|<task name>|<course name>|<status>|<plannedMinutes>|<actualMinutes>
-// status: "Not Started" | "In Progress" | "Completed"
-//
-// Output (stdout), key=value pairs:
-//   REPORT tasks_completed=<n> tasks_total=<n> completion_rate=<pct>
-//          study_minutes=<n> schedule_adherence=<pct>
-//   COURSE total=<n> completed=<n> percentage=<pct> name=<course name>
-//   (one COURSE line per distinct course; name runs to end of line)
-//
-// Example:
-//   printf "TASK|Sets Homework|Discrete Mathematics|Completed|60|50\n" | ./progressReport
-
 TaskStatus parseStatus(const string& s)
 {
     if (s == "Completed") return TaskStatus::Completed;
     if (s == "In Progress") return TaskStatus::InProgress;
-    return TaskStatus::NotStarted; // covers "Not Started" and anything unrecognized
+    return TaskStatus::NotStarted; // "Not Started" and anything unrecognized
 }
 
 vector<string> splitPipe(const string& line)
@@ -401,6 +311,7 @@ vector<string> splitPipe(const string& line)
     return fields;
 }
 
+// Reads TASK lines from stdin; prints the REPORT line and one COURSE line per course.
 int main()
 {
     vector<Task> tasks;
