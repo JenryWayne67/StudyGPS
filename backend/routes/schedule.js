@@ -100,6 +100,22 @@ function formatDate(date) {
     return `${y}-${m}-${d}`;
 }
 
+// "Today" and the current time as the user's browser sees them (sent by the
+// Regenerate buttons). The server runs in another time zone (Render uses
+// UTC), which put "today" on the wrong date near midnight and made "times
+// already past" wrong. Falls back to the server's own clock.
+function readClock(body) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((body && body.today) || ''));
+    const nowMinutes = Number(body && body.now_minutes);
+    if (match && Number.isInteger(nowMinutes) && nowMinutes >= 0 && nowMinutes < 1440) {
+        return { today: new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])), nowMinutes };
+    }
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    return { today, nowMinutes: now.getHours() * 60 + now.getMinutes() };
+}
+
 // A day's start/end is when the user is AVAILABLE, not a promise that
 // every one of those minutes should be filled with back-to-back sessions.
 // A long window (e.g. 2:30pm-10:00pm) realistically has to make room for
@@ -145,11 +161,30 @@ function splitAroundLongBreak(startMinutes, endMinutes) {
     return segments;
 }
 
-// Build one or more SLOTs per upcoming day that falls on one of the user's
-// study days, for the next DAYS_TO_PLAN days starting today (dayIndex 0).
-// A day's available window may be split into more than one slot - see
-// splitAroundLongBreak() above.
-function buildSlotsAndDateMap(preferences) {
+const MINUTES_PER_DAY = 1440;
+
+// No session may cross midnight, so a slot is cut there. The part before
+// midnight ends at 23:59, so no session is ever stored as ending at "00:00".
+function splitAtMidnight(seg) {
+    if (seg.endMinutes === MINUTES_PER_DAY) return [{ ...seg, endMinutes: MINUTES_PER_DAY - 1 }];
+    if (seg.startMinutes >= MINUTES_PER_DAY || seg.endMinutes < MINUTES_PER_DAY) return [seg];
+    return [
+        { startMinutes: seg.startMinutes, endMinutes: MINUTES_PER_DAY - 1 },
+        { startMinutes: MINUTES_PER_DAY, endMinutes: seg.endMinutes }
+    ];
+}
+
+// Build one or more SLOTs per study day for the next DAYS_TO_PLAN days
+// starting today (dayIndex 0), each day with its own hours (day_schedule) and
+// split around dinner (splitAroundLongBreak()).
+//
+// A window that ends before it starts runs past midnight (e.g. 8:30pm-2am).
+// Its after-midnight part keeps the study day's index - so it counts toward
+// that day's daily limit - as minutes past 1440, is stored under the next
+// date, and stops where the next day's own hours begin. Nothing is scheduled
+// earlier today than the current time; last night's window still counts for
+// whatever of it is left after midnight.
+function buildSlotsAndDateMap(preferences, clock) {
     const studyDays = new Set(
         (preferences.study_days || '')
             .split(',')
@@ -157,33 +192,53 @@ function buildSlotsAndDateMap(preferences) {
             .filter(Boolean)
     );
 
-    const slots = [];
-    const dateByDayIndex = new Map();
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    for (let dayIndex = 0; dayIndex < DAYS_TO_PLAN; dayIndex++) {
-        const date = new Date(today);
+    const dateFor = (dayIndex) => {
+        const date = new Date(clock.today);
         date.setDate(date.getDate() + dayIndex);
+        return date;
+    };
 
-        const dayLabel = date.toLocaleDateString('en-US', { weekday: 'long' });
-        dateByDayIndex.set(dayIndex, formatDate(date));
+    // A day's window in minutes (end past 1440 if it runs past midnight), or
+    // null for a day off.
+    const windowFor = (dayIndex) => {
+        const dayLabel = dateFor(dayIndex).toLocaleDateString('en-US', { weekday: 'long' });
+        if (studyDays.size > 0 && !studyDays.has(dayLabel)) return null;
+        const hours = getDayWindow(preferences, dayLabel);
+        const start = timeToMinutes(hours.start);
+        let end = timeToMinutes(hours.end);
+        if (end < start) end += MINUTES_PER_DAY;
+        return { dayLabel, start, end };
+    };
 
-        if (studyDays.size === 0 || studyDays.has(dayLabel)) {
-            // Each day gets ITS OWN start/end - e.g. Saturday/Sunday can run
-            // 2:30pm-10:00pm while weekdays run 6:30pm-10:00pm. Previously
-            // every day used the same account-wide preferred_start/end,
-            // which is why per-day hours set during onboarding never took
-            // effect.
-            const window = getDayWindow(preferences, dayLabel);
-            const segments = splitAroundLongBreak(timeToMinutes(window.start), timeToMinutes(window.end));
-            for (const seg of segments) {
+    const dateByDayIndex = new Map();
+    for (let dayIndex = 0; dayIndex <= DAYS_TO_PLAN; dayIndex++) {
+        dateByDayIndex.set(dayIndex, formatDate(dateFor(dayIndex)));
+    }
+
+    const earliestToday = Math.ceil(clock.nowMinutes / 5) * 5;
+    const slots = [];
+
+    for (let dayIndex = -1; dayIndex < DAYS_TO_PLAN; dayIndex++) {
+        const window = windowFor(dayIndex);
+        if (!window) continue;
+        let { start, end } = window;
+
+        const next = windowFor(dayIndex + 1);
+        if (end > MINUTES_PER_DAY && next) end = Math.min(end, MINUTES_PER_DAY + next.start);
+
+        // What's already past: today before now, and all of yesterday's
+        // window up to now (after midnight).
+        const pastUntil = dayIndex === -1 ? MINUTES_PER_DAY + earliestToday : dayIndex === 0 ? earliestToday : 0;
+        start = Math.max(start, pastUntil);
+        if (end <= start) continue;
+
+        for (const seg of splitAroundLongBreak(start, end)) {
+            for (const part of splitAtMidnight(seg)) {
                 slots.push({
-                    dayLabel,
+                    dayLabel: window.dayLabel,
                     dayIndex,
-                    startMinutes: seg.startMinutes,
-                    endMinutes: seg.endMinutes
+                    startMinutes: part.startMinutes,
+                    endMinutes: part.endMinutes
                 });
             }
         }
@@ -221,11 +276,12 @@ async function getPendingTasks(userId) {
     `).all(userId);
 }
 
-function daysUntil(deadline) {
+function daysUntil(deadline, today) {
     if (!deadline) return 30; // no deadline set - treat as not urgent
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(deadline);
+    // "YYYY-MM-DD" as a local calendar date (new Date("2026-09-14") would be
+    // midnight UTC, a day off in some time zones).
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(deadline));
+    const due = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(deadline);
     if (Number.isNaN(due.getTime())) return 30;
     const diffMs = due.getTime() - today.getTime();
     return Math.round(diffMs / (1000 * 60 * 60 * 24)); // may be negative if overdue
@@ -234,7 +290,7 @@ function daysUntil(deadline) {
 // Run cpp_engine/scheduler.exe: pipe CONFIG/TASK/SLOT lines in, read
 // scheduled sessions (key=value) back out - same Node<->C++ boundary
 // convention as runSectionTaskManager() in materials.js.
-function runScheduler({ preferences, tasks, slots }) {
+function runScheduler({ preferences, tasks, slots, today }) {
     const exePath = path.join(__dirname, '../../cpp_engine/scheduler.exe');
 
     const lines = [];
@@ -247,7 +303,7 @@ function runScheduler({ preferences, tasks, slots }) {
             task.title,
             task.estimated_minutes || 0,
             task.priority || 0,
-            daysUntil(task.deadline),
+            daysUntil(task.deadline, today),
             task.difficulty || 1,
             task.start_page ?? -1,
             task.end_page ?? -1,
@@ -312,13 +368,14 @@ router.post('/generate', async (req, res) => {
     try {
         const userId = req.user.id;
         const [preferences, tasks] = await Promise.all([getPreferences(userId), getPendingTasks(userId)]);
-        const { slots, dateByDayIndex } = buildSlotsAndDateMap(preferences);
+        const clock = readClock(req.body);
+        const { slots, dateByDayIndex } = buildSlotsAndDateMap(preferences, clock);
 
         if (tasks.length === 0) {
             return res.json({ success: true, message: 'No pending tasks to schedule.', schedule: [], warnings: [] });
         }
 
-        const { sessions, warnings } = runScheduler({ preferences, tasks, slots });
+        const { sessions, warnings } = runScheduler({ preferences, tasks, slots, today: clock.today });
 
         const replace = db.transaction(async (tx) => {
             // Clear only this user's existing schedule rows before
@@ -336,7 +393,9 @@ router.post('/generate', async (req, res) => {
 
             const rows = sessions.map((s) => ({
                 task_id: s.task_id,
-                date: dateByDayIndex.get(s.day_index) || null,
+                // Time after midnight of an overnight window belongs to the
+                // next date (see buildSlotsAndDateMap()).
+                date: dateByDayIndex.get(s.day_index + Math.floor(s.start_minutes / MINUTES_PER_DAY)) || null,
                 start_time: minutesToTime(s.start_minutes),
                 end_time: minutesToTime(s.end_minutes),
                 start_page: s.start_page >= 0 ? s.start_page : null,

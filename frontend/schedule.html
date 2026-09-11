@@ -695,7 +695,14 @@
       btn.disabled = true;
 
       try {
-        await fetchJSON('/api/schedule/generate', { method: 'POST' });
+        // The browser's own date and time, so "today" and the times already
+        // past are the user's, not the server's (it runs in another time zone).
+        const now = new Date();
+        await fetchJSON('/api/schedule/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ today: toDateStr(now), now_minutes: now.getHours() * 60 + now.getMinutes() })
+        });
         await loadSchedule();
         renderWeeklyView();
       } finally {
