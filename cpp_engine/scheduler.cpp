@@ -149,10 +149,15 @@ public:
         // Each chain's sessions, in the order they must be studied.
         std::vector<std::vector<int>> streams = buildStreams();
         std::vector<std::vector<PlannedSession>> chainSessions;
-        std::vector<std::string> chainCourse; // what takes turns: the course (or the chain itself)
+        // What takes turns: a course's PDFs take one turn together (they're
+        // studied one after another anyway); every other task - e.g. each
+        // custom task, even though they all live in the same "Personal
+        // Tasks" course - is a subject of its own and takes its own turn.
+        std::vector<std::string> chainCourse;
         for (const std::vector<int>& chain : buildChains(streams)) {
             const Task& first = tasks_[streams[chain.front()].front()];
-            chainCourse.push_back(first.courseId.empty() ? "#" + std::to_string(chainSessions.size()) : first.courseId);
+            const bool pdfCourse = !first.materialId.empty() && first.hasPages() && !first.courseId.empty();
+            chainCourse.push_back(pdfCourse ? first.courseId : "#" + std::to_string(chainSessions.size()));
             chainSessions.emplace_back();
             for (int streamIdx : chain) {
                 for (PlannedSession& session : planStreamSessions(streams[streamIdx], sessionLength)) {

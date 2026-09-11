@@ -200,7 +200,10 @@ async function getPendingTasks(userId) {
         SELECT
             t.id,
             t.priority,
-            t.deadline,
+            -- A PDF's deadline (set on the Materials page) applies to all of
+            -- its sections unless a task has its own. Previously only the
+            -- task's own deadline was read, so PDF deadlines were ignored.
+            COALESCE(t.deadline, m.deadline) AS deadline,
             s.title,
             s.start_page,
             s.end_page,
@@ -212,6 +215,7 @@ async function getPendingTasks(userId) {
         FROM tasks t
         JOIN sections s ON s.id = t.section_id
         JOIN courses c ON c.id = s.course_id
+        LEFT JOIN materials m ON m.id = s.material_id
         WHERE c.user_id = ? AND t.status != 'Completed'
         ORDER BY t.priority DESC
     `).all(userId);
