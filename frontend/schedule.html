@@ -428,8 +428,10 @@
       return res.json();
     }
 
+    // Times after midnight of a study night are stored as 24:00+ (25:10 = 1:10 AM).
     function formatClock(hhmm) {
-      const [h, m] = String(hhmm).split(':').map(Number);
+      const [hRaw, m] = String(hhmm).split(':').map(Number);
+      const h = hRaw % 24;
       const h12 = h % 12 === 0 ? 12 : h % 12;
       const ampm = h < 12 ? 'AM' : 'PM';
       return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
@@ -613,11 +615,24 @@
     // all sharing the same time), so an edit moves all of them together. ----
     let editingScheduleIds = null;
 
+    // Times after midnight of a study night are stored as 24:00+, but the time
+    // inputs only go to 23:59 - convert on the way in and back on save.
+    let editingAfterMidnight = false;
+    const toInputTime = (hhmm) => {
+      const [h, m] = String(hhmm).split(':');
+      return `${String(Number(h) % 24).padStart(2, '0')}:${m}`;
+    };
+    const addDay = (hhmm) => {
+      const [h, m] = String(hhmm).split(':');
+      return `${String(Number(h) + 24).padStart(2, '0')}:${m}`;
+    };
+
     function openEditSessionModal(scheduleIds, date, startTime, endTime) {
       editingScheduleIds = String(scheduleIds).split(',').map(Number);
+      editingAfterMidnight = String(startTime) >= '24:00';
       document.getElementById('editSessionDate').value = date;
-      document.getElementById('editSessionStart').value = startTime;
-      document.getElementById('editSessionEnd').value = endTime;
+      document.getElementById('editSessionStart').value = toInputTime(startTime);
+      document.getElementById('editSessionEnd').value = toInputTime(endTime);
       document.getElementById('editSessionError').classList.add('hidden');
       document.getElementById('editSessionModal').classList.remove('hidden');
     }
@@ -633,13 +648,21 @@
       errorEl.classList.add('hidden');
 
       const date = document.getElementById('editSessionDate').value;
-      const start_time = document.getElementById('editSessionStart').value;
-      const end_time = document.getElementById('editSessionEnd').value;
+      let start_time = document.getElementById('editSessionStart').value;
+      let end_time = document.getElementById('editSessionEnd').value;
 
       if (!date || !start_time || !end_time) {
         errorEl.textContent = 'All fields are required.';
         errorEl.classList.remove('hidden');
         return;
+      }
+      // Back to the stored form: an early-morning time on an after-midnight
+      // session stays after midnight; an end before the start runs past midnight.
+      if (editingAfterMidnight && start_time < '12:00') {
+        start_time = addDay(start_time);
+        end_time = addDay(end_time);
+      } else if (end_time <= start_time) {
+        end_time = addDay(end_time);
       }
       if (start_time >= end_time) {
         errorEl.textContent = 'End time must be after start time.';
@@ -739,9 +762,13 @@
         const dateStr = toDateStr(date);
         const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
 
+        // Today's column also shows what's left of last night's study night
+        // (24:00+ on yesterday's date) - yesterday has no column of its own.
+        const prevDateStr = toDateStr(new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1));
+        const showLastNight = dateStr === todayStr;
         const sessionsForDay = groupIntoSessions(scheduleCache
-          .filter(s => s.date === dateStr)
-          .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '')));
+          .filter(s => s.date === dateStr || (showLastNight && s.date === prevDateStr && String(s.start_time) >= '24:00'))
+          .sort((a, b) => ((a.date || '') + (a.start_time || '')).localeCompare((b.date || '') + (b.start_time || ''))));
 
         days.push({
           dayName,

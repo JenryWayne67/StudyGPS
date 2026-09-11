@@ -406,8 +406,10 @@ app.get('*', (req, res) => {
 const REMINDER_WINDOW_MINUTES = 15;
 const REMINDER_CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
+// Times after midnight of a study night are stored as 24:00+ (25:10 = 1:10 AM).
 function formatClock12(hhmm) {
-  const [h, m] = String(hhmm).split(':').map(Number);
+  const [hRaw, m] = String(hhmm).split(':').map(Number);
+  const h = hRaw % 24;
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const ampm = h < 12 ? 'AM' : 'PM';
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
@@ -416,13 +418,16 @@ function formatClock12(hhmm) {
 async function checkAndSendScheduleReminders() {
   try {
     const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = dateStr(now);
+    // After midnight, last night's sessions are stored on yesterday's date as 24:00+.
+    const yesterday = dateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const windowEndMinutes = nowMinutes + REMINDER_WINDOW_MINUTES;
 
     const rows = await db.prepare(`
       SELECT
-          sch.id AS schedule_id, sch.start_time, sch.end_time,
+          sch.id AS schedule_id, sch.date, sch.start_time, sch.end_time,
           s.title, c.name AS course_name,
           u.id AS user_id, u.email, u.name AS user_name
       FROM schedules sch
@@ -431,18 +436,18 @@ async function checkAndSendScheduleReminders() {
       JOIN courses c ON c.id = s.course_id
       JOIN users u ON u.id = c.user_id
       JOIN user_preferences up ON up.user_id = u.id
-      WHERE sch.date = ?
+      WHERE sch.date IN (?, ?)
         AND (sch.reminder_sent IS NULL OR sch.reminder_sent = 0)
         AND up.email_notifications = 1
         AND t.status != 'Completed'
-    `).all(today);
+    `).all(today, yesterday);
 
     // One session can cover several short sections - one schedules row
     // per section, all sharing the same start/end time. Send one reminder
     // per session, not one per row.
     const sessions = new Map();
     for (const row of rows) {
-      const key = `${row.user_id}|${row.start_time}|${row.end_time}`;
+      const key = `${row.user_id}|${row.date}|${row.start_time}|${row.end_time}`;
       if (!sessions.has(key)) sessions.set(key, { ...row, titles: [], scheduleIds: [] });
       const session = sessions.get(key);
       session.titles.push(row.title);
@@ -451,7 +456,7 @@ async function checkAndSendScheduleReminders() {
 
     for (const session of sessions.values()) {
       const [sh, sm] = String(session.start_time).split(':').map(Number);
-      const startMinutes = sh * 60 + sm;
+      const startMinutes = sh * 60 + sm - (session.date === yesterday ? 1440 : 0);
       // Not upcoming within the reminder window yet (or its window has
       // already passed) - leave it for a later check, or let it quietly
       // stop being retried once it's no longer "upcoming" at all.

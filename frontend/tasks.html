@@ -542,8 +542,10 @@
 
     // Same clock formatting Schedule/Dashboard use, so a task's card here
     // reads identically to its block over there.
+    // Times after midnight of a study night are stored as 24:00+ (25:10 = 1:10 AM).
     function formatClock(hhmm) {
-      const [h, m] = String(hhmm).split(':').map(Number);
+      const [hRaw, m] = String(hhmm).split(':').map(Number);
+      const h = hRaw % 24;
       const h12 = h % 12 === 0 ? 12 : h % 12;
       const ampm = h < 12 ? 'AM' : 'PM';
       return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
@@ -568,8 +570,10 @@
     function localClock() {
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
+      const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       return {
         today: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+        yesterday: `${y.getFullYear()}-${pad(y.getMonth() + 1)}-${pad(y.getDate())}`,
         now_minutes: now.getHours() * 60 + now.getMinutes()
       };
     }
@@ -577,10 +581,14 @@
     async function loadTasks() {
       const data = await fetchJSON('/api/tasks');
       allTasksCache = (data && data.tasks) || [];
-      // TODAY vs UPCOMING by the user's own date, not the server's.
-      const today = localClock().today;
+      // TODAY vs UPCOMING by the user's own date, not the server's. After
+      // midnight, the rest of last night's study night (24:00+ on yesterday's
+      // date) is today too.
+      const { today, yesterday } = localClock();
       for (const task of allTasksCache) {
-        if (task.session_date) task.time_group = task.session_date === today ? 'TODAY' : 'UPCOMING';
+        if (!task.session_date) continue;
+        const lastNight = task.session_date === yesterday && String(task.session_start_time) >= '24:00';
+        task.time_group = task.session_date === today || lastNight ? 'TODAY' : 'UPCOMING';
       }
     }
 

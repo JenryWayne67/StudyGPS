@@ -238,8 +238,10 @@
       return res.json();
     }
 
+    // Times after midnight of a study night are stored as 24:00+ (25:10 = 1:10 AM).
     function formatClock(hhmm) {
-      const [h, m] = String(hhmm).split(':').map(Number);
+      const [hRaw, m] = String(hhmm).split(':').map(Number);
+      const h = hRaw % 24;
       const h12 = h % 12 === 0 ? 12 : h % 12;
       const ampm = h < 12 ? 'AM' : 'PM';
       return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
@@ -374,7 +376,11 @@
 
       // Today's study timeline, from the real generated schedule.
       const todayStr = todayLocalDateStr(now);
-      const todaysSessions = groupIntoSessions(schedule.filter(s => s.date === todayStr));
+      // After midnight, the rest of last night's study night (24:00+ on
+      // yesterday's date) is today too.
+      const yesterdayStr = todayLocalDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+      const todaysSessions = groupIntoSessions(schedule.filter(s =>
+        s.date === todayStr || (s.date === yesterdayStr && String(s.start_time) >= '24:00')));
       const todayContainer = document.getElementById('todayStudyContainer');
       // The section a session's Start button opens: its first one that
       // isn't finished yet.

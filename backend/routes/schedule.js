@@ -78,11 +78,11 @@ function timeToMinutes(hhmm) {
     return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
-// minutes since midnight -> "HH:MM" (24-hour, for storage/display)
+// minutes since midnight -> "HH:MM". Past midnight of a study night it keeps
+// counting (25:10 = 1:10am), so the session stays on that night's date.
 function minutesToTime(totalMinutes) {
-    const wrapped = ((totalMinutes % 1440) + 1440) % 1440;
-    const h = Math.floor(wrapped / 60);
-    const m = wrapped % 60;
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
@@ -163,27 +163,16 @@ function splitAroundLongBreak(startMinutes, endMinutes) {
 
 const MINUTES_PER_DAY = 1440;
 
-// No session may cross midnight, so a slot is cut there. The part before
-// midnight ends at 23:59, so no session is ever stored as ending at "00:00".
-function splitAtMidnight(seg) {
-    if (seg.endMinutes === MINUTES_PER_DAY) return [{ ...seg, endMinutes: MINUTES_PER_DAY - 1 }];
-    if (seg.startMinutes >= MINUTES_PER_DAY || seg.endMinutes < MINUTES_PER_DAY) return [seg];
-    return [
-        { startMinutes: seg.startMinutes, endMinutes: MINUTES_PER_DAY - 1 },
-        { startMinutes: MINUTES_PER_DAY, endMinutes: seg.endMinutes }
-    ];
-}
-
 // Build one or more SLOTs per study day for the next DAYS_TO_PLAN days
 // starting today (dayIndex 0), each day with its own hours (day_schedule) and
 // split around dinner (splitAroundLongBreak()).
 //
 // A window that ends before it starts runs past midnight (e.g. 8:30pm-2am).
-// Its after-midnight part keeps the study day's index - so it counts toward
-// that day's daily limit - as minutes past 1440, is stored under the next
-// date, and stops where the next day's own hours begin. Nothing is scheduled
-// earlier today than the current time; last night's window still counts for
-// whatever of it is left after midnight.
+// The whole night stays on its study day - same date, same daily limit - with
+// times past midnight counted on from 24:00 (so a session can run across
+// midnight), and stops where the next day's own hours begin. Nothing is
+// scheduled earlier today than the current time; last night's window still
+// counts for whatever of it is left after midnight.
 function buildSlotsAndDateMap(preferences, clock) {
     const studyDays = new Set(
         (preferences.study_days || '')
@@ -211,7 +200,7 @@ function buildSlotsAndDateMap(preferences, clock) {
     };
 
     const dateByDayIndex = new Map();
-    for (let dayIndex = 0; dayIndex <= DAYS_TO_PLAN; dayIndex++) {
+    for (let dayIndex = -1; dayIndex < DAYS_TO_PLAN; dayIndex++) {
         dateByDayIndex.set(dayIndex, formatDate(dateFor(dayIndex)));
     }
 
@@ -233,14 +222,12 @@ function buildSlotsAndDateMap(preferences, clock) {
         if (end <= start) continue;
 
         for (const seg of splitAroundLongBreak(start, end)) {
-            for (const part of splitAtMidnight(seg)) {
-                slots.push({
-                    dayLabel: window.dayLabel,
-                    dayIndex,
-                    startMinutes: part.startMinutes,
-                    endMinutes: part.endMinutes
-                });
-            }
+            slots.push({
+                dayLabel: window.dayLabel,
+                dayIndex,
+                startMinutes: seg.startMinutes,
+                endMinutes: seg.endMinutes
+            });
         }
     }
 
@@ -393,9 +380,7 @@ router.post('/generate', async (req, res) => {
 
             const rows = sessions.map((s) => ({
                 task_id: s.task_id,
-                // Time after midnight of an overnight window belongs to the
-                // next date (see buildSlotsAndDateMap()).
-                date: dateByDayIndex.get(s.day_index + Math.floor(s.start_minutes / MINUTES_PER_DAY)) || null,
+                date: dateByDayIndex.get(s.day_index) || null,
                 start_time: minutesToTime(s.start_minutes),
                 end_time: minutesToTime(s.end_minutes),
                 start_page: s.start_page >= 0 ? s.start_page : null,
@@ -470,7 +455,8 @@ router.get('/', async (req, res) => {
 });
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Up to 47:59 - times after midnight of a study night count on from 24:00.
+const TIME_PATTERN = /^([0-3]\d|4[0-7]):[0-5]\d$/;
 
 // ==========================================
 // PUT /api/schedule/:id
