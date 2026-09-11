@@ -615,6 +615,42 @@
     // all sharing the same time), so an edit moves all of them together. ----
     let editingScheduleIds = null;
 
+    // Each shown day's sessions (by YYYY-MM-DD), so ↑/↓ know their neighbours.
+    let sessionsByDayKey = new Map();
+
+    // Switch a session with the one before (-1) or after (+1) it in its day.
+    // Warns first if that would put a PDF's later pages before its earlier ones.
+    async function swapSessions(dayKey, index, direction) {
+      const sessions = sessionsByDayKey.get(dayKey) || [];
+      const a = sessions[index];
+      const b = sessions[index + direction];
+      if (!a || !b) return;
+      const [earlier, later] = direction < 0 ? [b, a] : [a, b];
+
+      if (earlier.date !== later.date) {
+        alert("Last night's sessions can only be switched with each other.");
+        return;
+      }
+      const sharedPdf = earlier.items.find(e => e.material_id && later.items.some(l => l.material_id === e.material_id));
+      if (sharedPdf) {
+        const name = sharedPdf.material_name ? sharedPdf.material_name.replace(/\.pdf$/i, '') : 'this PDF';
+        const ok = confirm(`This puts ${sessionPagesLabel(later.items) || 'later pages'} before ${sessionPagesLabel(earlier.items) || 'earlier pages'} of ${name}. Switch anyway?`);
+        if (!ok) return;
+      }
+
+      const data = await fetchJSON('/api/schedule/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ first: earlier.items.map(i => i.id), second: later.items.map(i => i.id) })
+      });
+      if (!data || data.success === false) {
+        alert('Could not switch these sessions: ' + ((data && data.error) || 'please try again.'));
+        return;
+      }
+      await loadSchedule();
+      renderWeeklyView();
+    }
+
     // Times after midnight of a study night are stored as 24:00+, but the time
     // inputs only go to 23:59 - convert on the way in and back on save.
     let editingAfterMidnight = false;
@@ -779,9 +815,12 @@
           // off day when it can't fit everything into study days alone, and
           // that session should still show, not get hidden behind "Off/Rest".
           isRestDay: !studyDays.has(dayName) && sessionsForDay.length === 0,
-          sessions: sessionsForDay
+          sessions: sessionsForDay,
+          key: dateStr
         });
       }
+
+      sessionsByDayKey = new Map(days.map(d => [d.key, d.sessions]));
 
       const gridContainer = document.getElementById('weeklyGridContainer');
       gridContainer.innerHTML = days.map(day => {
@@ -813,13 +852,17 @@
                   <span class="text-xs font-mono">─────</span>
                   <span class="text-[10px] text-slate-400 font-medium">Nothing scheduled yet</span>
                 </div>
-              ` : day.sessions.map(s => `
+              ` : day.sessions.map((s, idx) => `
                 <div class="space-y-1">
                   <div class="flex items-center justify-between pl-1">
                     <span class="font-mono text-xs font-bold text-slate-600">${formatClock(s.start_time)} – ${formatClock(s.end_time)}</span>
-                    <button type="button" onclick="openEditSessionModal('${s.items.map(i => i.id).join(',')}', '${s.date}', '${s.start_time}', '${s.end_time}')" title="Edit session time" class="text-slate-300 hover:text-blue-600 transition text-xs leading-none px-1">
-                      ✏️
-                    </button>
+                    <div class="flex items-center">
+                      <button type="button" onclick="swapSessions('${day.key}', ${idx}, -1)" title="Move earlier in the day" ${idx === 0 ? 'disabled style="opacity:.3"' : ''} class="text-slate-400 hover:text-blue-600 transition text-xs font-bold leading-none px-1">↑</button>
+                      <button type="button" onclick="swapSessions('${day.key}', ${idx}, 1)" title="Move later in the day" ${idx === day.sessions.length - 1 ? 'disabled style="opacity:.3"' : ''} class="text-slate-400 hover:text-blue-600 transition text-xs font-bold leading-none px-1">↓</button>
+                      <button type="button" onclick="openEditSessionModal('${s.items.map(i => i.id).join(',')}', '${s.date}', '${s.start_time}', '${s.end_time}')" title="Edit session time" class="text-slate-300 hover:text-blue-600 transition text-xs leading-none px-1">
+                        ✏️
+                      </button>
+                    </div>
                   </div>
                   <a href="tasks.html?task_id=${(s.items.find(i => i.task_status !== 'Completed') || s).task_id}${sessionMinutes(s.start_time, s.end_time) ? `&minutes=${sessionMinutes(s.start_time, s.end_time)}` : ''}" class="block p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition group min-h-[72px] flex flex-col justify-between" style="border-left: 3px solid ${courseColor(s)}">
                     <div>

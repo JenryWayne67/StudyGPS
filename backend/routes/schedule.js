@@ -454,6 +454,80 @@ router.get('/', async (req, res) => {
     }
 });
 
+// ==========================================
+// POST /api/schedule/swap   { first: [ids], second: [ids] }
+// Switch the order of two sessions on the same day. Each is the schedule
+// rows sharing one time block (a session covering several sections). The
+// later one moves to the earlier one's start and the earlier one follows
+// after the same gap, so the day keeps its span even if the lengths differ.
+// ==========================================
+router.post('/swap', async (req, res) => {
+    try {
+        const idsOf = (list) => (Array.isArray(list) ? list.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
+        const firstIds = idsOf(req.body && req.body.first);
+        const secondIds = idsOf(req.body && req.body.second);
+        if (firstIds.length === 0 || secondIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'Two sessions are needed to switch.' });
+        }
+
+        const allIds = [...firstIds, ...secondIds];
+        const rows = await db.prepare(`
+            SELECT sch.id, sch.date, sch.start_time, sch.end_time, c.user_id AS owner_user_id
+            FROM schedules sch
+            JOIN tasks t ON t.id = sch.task_id
+            JOIN sections s ON s.id = t.section_id
+            JOIN courses c ON c.id = s.course_id
+            WHERE sch.id IN (${allIds.map(() => '?').join(',')})
+        `).all(...allIds);
+
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        if (allIds.some((id) => !byId.has(id) || byId.get(id).owner_user_id !== req.user.id)) {
+            return res.status(404).json({ success: false, error: 'Session not found' });
+        }
+
+        // Every row of a session must share its date and time block.
+        const blockOf = (ids) => {
+            const first = byId.get(ids[0]);
+            const same = ids.every((id) => {
+                const r = byId.get(id);
+                return r.date === first.date && r.start_time === first.start_time && r.end_time === first.end_time;
+            });
+            return same ? { ids, date: first.date, start: timeToMinutes(first.start_time), end: timeToMinutes(first.end_time) } : null;
+        };
+        let earlier = blockOf(firstIds);
+        let later = blockOf(secondIds);
+        if (!earlier || !later) {
+            return res.status(400).json({ success: false, error: 'Each session must be one time block.' });
+        }
+        if (earlier.date !== later.date) {
+            return res.status(400).json({ success: false, error: 'Only sessions on the same day can be switched.' });
+        }
+        if (later.start < earlier.start) [earlier, later] = [later, earlier];
+        if (later.start < earlier.end) {
+            return res.status(400).json({ success: false, error: 'These sessions overlap.' });
+        }
+
+        const gap = later.start - earlier.end;
+        const movedUp = { start: earlier.start, end: earlier.start + (later.end - later.start) };
+        const movedDown = { start: movedUp.end + gap, end: later.end };
+
+        const update = (ids, times) => ids.map((id) => ({
+            sql: `UPDATE schedules SET start_time = ?, end_time = ? WHERE id = ?`,
+            args: [minutesToTime(times.start), minutesToTime(times.end), id]
+        }));
+        await db.batch([...update(later.ids, movedUp), ...update(earlier.ids, movedDown)]);
+
+        res.json({
+            success: true,
+            moved_earlier: { ids: later.ids, start_time: minutesToTime(movedUp.start), end_time: minutesToTime(movedUp.end) },
+            moved_later: { ids: earlier.ids, start_time: minutesToTime(movedDown.start), end_time: minutesToTime(movedDown.end) }
+        });
+    } catch (error) {
+        console.error('Swap sessions error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // Up to 47:59 - times after midnight of a study night count on from 24:00.
 const TIME_PATTERN = /^([0-3]\d|4[0-7]):[0-5]\d$/;
