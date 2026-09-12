@@ -160,6 +160,22 @@ async function migrateExistingDatabase() {
     console.log('Migrated: added sections.attachment_id column.');
   }
 
+  // The user's running/paused study timer (see backend/routes/timer.js), so it
+  // survives a reload, a logout, or moving to another device.
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS active_timers (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id),
+      task_id INTEGER NOT NULL,
+      schedule_id INTEGER,
+      occurrence_key TEXT,
+      planned_minutes INTEGER NOT NULL,
+      total_seconds INTEGER NOT NULL,
+      remaining_seconds INTEGER NOT NULL,
+      is_running INTEGER DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
   const courseCols = await client.execute(`PRAGMA table_info(courses)`);
   const courseColumnNames = courseCols.rows.map((r) => r.name);
 
@@ -304,6 +320,7 @@ app.use('/api/courses', courseRoutes);
 
 // Mount Material routes
 app.use('/api/materials', materialRoutes);
+app.use('/api/timer', require('./backend/routes/timer'));
 
 // Mount Task routes
 app.use('/api/tasks', taskRoutes);

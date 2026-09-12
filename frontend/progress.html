@@ -273,9 +273,10 @@
       //    chart below - the top stats now come straight from `report`)
       // ==========================================
 
-      const completedSessions = sessions.filter(session =>
-        Number(session.completed) === 1
-      );
+      // Every logged session counts, not only the ones marked "completed" -
+      // time spent on a task you haven't finished yet is still time studied,
+      // and it used to be missing from the chart entirely.
+      const loggedSessions = sessions;
 
 
       // ==========================================
@@ -368,7 +369,7 @@
 
       // Put each session into the correct day
 
-      completedSessions.forEach(session => {
+      loggedSessions.forEach(session => {
 
         if (!session.end_time) return;
 

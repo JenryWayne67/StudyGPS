@@ -382,6 +382,82 @@
     // time. finishTimer() logs the session against each of them.
     let activeSessionItems = null;
 
+    // The timer is also kept on the server (backend/routes/timer.js), so a
+    // reload, a logout or another device picks it up where it was - it used
+    // to live only in this page's memory and started over every time. Saving
+    // it once a minute while it runs doubles as the keep-alive that stops the
+    // server sleeping in the middle of a long session.
+    let timerSaveInterval = null;
+
+    async function saveTimerState() {
+      if (!isTimerActive || activeTaskId == null) return;
+      const task = allTasksCache.find(t => occKey(t) === activeOccurrenceKey) ||
+        allTasksCache.find(t => Number(t.id) === Number(activeTaskId));
+      try {
+        await fetch('/api/timer', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task_id: activeTaskId,
+            schedule_id: task && task.schedule_id != null ? task.schedule_id : null,
+            occurrence_key: activeOccurrenceKey,
+            planned_minutes: plannedMinutes,
+            total_seconds: totalSeconds,
+            remaining_seconds: remainingSeconds,
+            is_running: isRunning
+          })
+        });
+      } catch (_) { /* offline or asleep - the next save catches up */ }
+    }
+
+    function clearSavedTimer() {
+      clearInterval(timerSaveInterval);
+      fetch('/api/timer', { method: 'DELETE', credentials: 'same-origin', keepalive: true }).catch(() => {});
+    }
+
+    function startTimerSaving() {
+      clearInterval(timerSaveInterval);
+      timerSaveInterval = setInterval(() => { if (isRunning) saveTimerState(); }, 60000);
+    }
+
+    // Bring back a timer left running or paused earlier. A running one keeps
+    // counting the time that passed while the page was closed.
+    async function restoreTimer() {
+      const data = await fetchJSON('/api/timer');
+      if (!data || !data.timer) return false;
+      const saved = data.timer;
+      const card = allTasksCache.find(t => occKey(t) === saved.occurrence_key) ||
+        allTasksCache.find(t => Number(t.id) === Number(saved.task_id));
+      if (!card) {
+        clearSavedTimer();
+        return false;
+      }
+
+      // The card it was started from, if it's still on the page - otherwise
+      // whichever card that task is part of now (cards regroup when the
+      // schedule changes).
+      const savedKeyStillShown = saved.occurrence_key &&
+        (sessionGroupsByKey.has(saved.occurrence_key) || document.getElementById(`task-card-${saved.occurrence_key}`));
+      const key = savedKeyStillShown ? saved.occurrence_key : sessionKey(card);
+      if (sessionGroupsByKey.has(key)) {
+        startSessionTimer(key, false); // also restores the session's sections
+      } else {
+        startTaskTimer(saved.task_id, false, saved.planned_minutes, key);
+      }
+
+      plannedMinutes = saved.planned_minutes;
+      totalSeconds = saved.total_seconds || saved.planned_minutes * 60;
+      remainingSeconds = Math.min(saved.remaining_seconds, totalSeconds);
+      renderTasks();
+      updateTimerDisplay();
+      setPauseResumeVisibility();
+      renderFullscreenTimerPanel();
+      if (saved.is_running && remainingSeconds > 0) resumeTimer();
+      return true;
+    }
+
     // (The PDF is read in Full Screen - see openFullscreen() - not inline
     // on the cards.)
 
@@ -509,7 +585,7 @@
 
           <div class="space-y-1.5">
             <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-              <div id="fsProgressBar" class="bg-blue-600 h-full rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
+              <div id="fsProgressBar" class="bg-blue-600 h-full rounded-full" style="width: ${percent}%"></div>
             </div>
             <div class="text-center text-[11px] font-medium text-slate-500">Target: ${plannedMinutes} minutes</div>
           </div>
@@ -664,6 +740,9 @@
 
       const card = document.getElementById(`task-card-${activeOccurrenceKey}`);
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      saveTimerState();
+      startTimerSaving();
     }
 
     function closeActiveTimer() {
@@ -673,6 +752,7 @@
       activeTaskId = null;
       activeOccurrenceKey = null;
       activeSessionItems = null;
+      clearSavedTimer();
       renderTasks();
       renderFullscreenTimerPanel(); // switches back to the Start CTA if open
     }
@@ -759,6 +839,7 @@
       clearInterval(timerInterval);
       setPauseResumeVisibility();
       updateTimerDisplay();
+      saveTimerState();
     }
 
     function resumeTimer() {
@@ -766,6 +847,8 @@
       setPauseResumeVisibility();
       updateTimerDisplay();
       startInterval();
+      startTimerSaving();
+      saveTimerState();
     }
 
     function addTime(mins) {
@@ -773,6 +856,7 @@
       totalSeconds += addedSec;
       remainingSeconds += addedSec;
       updateTimerDisplay();
+      saveTimerState();
     }
 
     function resetTimer() {
@@ -780,6 +864,7 @@
       remainingSeconds = totalSeconds;
       updateTimerDisplay();
       setPauseResumeVisibility();
+      saveTimerState();
     }
 
     async function finishTimer() {
@@ -1043,7 +1128,7 @@
                 <!-- Sleek Progress Bar -->
                 <div class="space-y-1.5">
                   <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div id="inlineProgressBar" class="bg-blue-600 h-full rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
+                    <div id="inlineProgressBar" class="bg-blue-600 h-full rounded-full" style="width: ${percent}%"></div>
                   </div>
                   <div class="flex items-center justify-between text-[11px] font-medium text-slate-500">
                     <span>Target: ${plannedMinutes} minutes</span>
@@ -1098,7 +1183,7 @@
               <div class="space-y-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-sm font-bold text-slate-900 ${isDone ? 'line-through text-slate-400' : ''}">${cardTitle(task)}</h3>
-                  ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
+                  ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white"></span> Focus Session Active</span>' : ''}
                 </div>
                 <p class="text-xs text-slate-600 font-medium">${task.course_name}${task.material_name ? ` <span class="text-slate-400 font-normal">· ${task.title}</span>` : ''}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
@@ -1165,7 +1250,7 @@
               <div class="space-y-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-sm font-bold text-slate-900 ${allDone ? 'line-through text-slate-400' : ''}">${cardTitle(first, items)}</h3>
-                  ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Focus Session Active</span>' : ''}
+                  ${isCurrentActive ? '<span class="text-[10px] font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-white"></span> Focus Session Active</span>' : ''}
                 </div>
                 <p class="text-xs text-slate-600 font-medium">${first.course_name}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-400 font-medium flex-wrap">
@@ -1537,12 +1622,19 @@
       populateCourseFilter();
       renderTasks();
 
+      // A timer left running or paused (here or on another device) comes back
+      // first; only then does a task link decide what to open.
+      const restored = await restoreTimer();
+
+      // Save the countdown's exact position when the page is closed or hidden.
+      window.addEventListener('pagehide', () => { if (isTimerActive) saveTimerState(); });
+
       // Came here from a task link on Dashboard or Schedule - open/select
       // that task and scroll to it, but don't start a real study session
       // just because they clicked a link. They still press "Start Studying"
       // (or "Resume" on the now-visible timer panel) themselves.
       const paramTaskId = getQueryParam('task_id');
-      if (paramTaskId) {
+      if (paramTaskId && !restored) {
         const paramMinutes = Number(getQueryParam('minutes'));
         // A task with more than one scheduled session now has more than
         // one card - land on its first (soonest) occurrence so the timer

@@ -1,6 +1,7 @@
 PRAGMA foreign_keys = ON;
 
 -- Clean up existing tables in reverse dependency order
+DROP TABLE IF EXISTS active_timers;
 DROP TABLE IF EXISTS study_sessions;
 DROP TABLE IF EXISTS schedules;
 DROP TABLE IF EXISTS tasks;
@@ -153,4 +154,19 @@ CREATE TABLE study_sessions (
     end_time TEXT,
     completed INTEGER DEFAULT 0,
     FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+-- ACTIVE STUDY TIMER - the one running/paused timer per user (see
+-- backend/routes/timer.js), so it survives a reload, logout or device change.
+CREATE TABLE active_timers (
+    user_id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL,
+    schedule_id INTEGER,
+    occurrence_key TEXT,
+    planned_minutes INTEGER NOT NULL,
+    total_seconds INTEGER NOT NULL,
+    remaining_seconds INTEGER NOT NULL,
+    is_running INTEGER DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
