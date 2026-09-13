@@ -471,6 +471,15 @@
     // Set when full screen was opened from a grouped session card, so its
     // Start button runs that whole session's timer.
     let fullscreenSessionKey = null;
+    // The one card (scheduled session) full screen was opened from, so a
+    // task with several sessions times and completes that session - not
+    // always its first one.
+    let fullscreenCardKey = null;
+
+    function fullscreenCard() {
+      return (fullscreenCardKey && allTasksCache.find(t => occKey(t) === fullscreenCardKey)) ||
+        allTasksCache.find(t => Number(t.id) === fullscreenTaskId);
+    }
 
     // Full screen study view - available for EVERY task now, not only
     // ones with an attached PDF. A material-backed task still gets the
@@ -478,16 +487,19 @@
     // (a custom task added directly on this page) gets a focused,
     // distraction-free full screen timer instead of being denied full
     // screen entirely.
-    function openFullscreen(taskId, sessionKey = null) {
+    function openFullscreen(taskId, sessionKey = null, cardKey = null) {
       const group = sessionKey ? sessionGroupsByKey.get(sessionKey) : null;
       // The row whose pages to open at: this session's own row for the
-      // task when opened from a session card, else the task's first one.
+      // task when opened from a session card or a plain card, else the
+      // task's first one.
       const task = (group && group.items.find(t => Number(t.id) === Number(taskId))) ||
+        (cardKey && allTasksCache.find(t => occKey(t) === cardKey)) ||
         allTasksCache.find(t => Number(t.id) === Number(taskId));
       if (!task) return;
 
       fullscreenTaskId = Number(taskId);
       fullscreenSessionKey = group ? sessionKey : null;
+      fullscreenCardKey = group ? null : occKey(task);
 
       document.getElementById('fsTitle').textContent = group ? cardTitle(group.items[0], group.items) : cardTitle(task);
       document.getElementById('fsSubtitle').textContent =
@@ -523,6 +535,7 @@
 
     function closeFullscreen() {
       fullscreenTaskId = null;
+      fullscreenCardKey = null;
       fullscreenSessionKey = null;
       document.getElementById('pdfFullscreenOverlay').classList.add('hidden');
       document.getElementById('fsPdfFrame').src = 'about:blank';
@@ -539,12 +552,12 @@
       if (!panel || fullscreenTaskId == null) return;
       renderFullscreenSections();
 
-      const task = allTasksCache.find(t => Number(t.id) === fullscreenTaskId);
+      const task = fullscreenCard();
       const group = fullscreenSessionKey ? sessionGroupsByKey.get(fullscreenSessionKey) : null;
       const isDone = group ? group.items.every(isItemDone) : (task && isItemDone(task));
       const isCurrentActive = isTimerActive && (group
         ? activeOccurrenceKey === fullscreenSessionKey
-        : Number(fullscreenTaskId) === Number(activeTaskId));
+        : activeOccurrenceKey === fullscreenCardKey);
 
       if (isDone) {
         panel.innerHTML = `
@@ -560,7 +573,7 @@
         panel.innerHTML = `
           <div class="text-center py-10 space-y-3">
             <p class="text-xs text-slate-500">Ready when you are.</p>
-            <button type="button" onclick="${group ? `startSessionTimer('${fullscreenSessionKey}')` : `startTaskTimer(${fullscreenTaskId}, true, ${overrideMinutes})`}" class="btn btn-primary shadow-sm flex items-center gap-2 mx-auto">
+            <button type="button" onclick="${group ? `startSessionTimer('${fullscreenSessionKey}')` : `startTaskTimer(${fullscreenTaskId}, true, ${overrideMinutes}, '${fullscreenCardKey}')`}" class="btn btn-primary shadow-sm flex items-center gap-2 mx-auto">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               Start Studying
             </button>
@@ -1013,13 +1026,14 @@
       return `${task.pages}${part}${continues}`;
     }
 
-    // Checkbox next to a section (session card or full screen): mark the
-    // whole section complete, or reopen it, without running a timer.
-    async function toggleSectionComplete(taskId, completed) {
+    // Checkbox next to a section (session card or full screen): mark that
+    // one scheduled session complete, or reopen it, without running a
+    // timer. The task only becomes Completed once all its sessions are.
+    async function toggleSectionComplete(taskId, completed, scheduleId = null) {
       const data = await fetchJSON(`/api/tasks/${taskId}/complete`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed })
+        body: JSON.stringify({ completed, schedule_id: scheduleId })
       });
       if (!data || data.success === false) {
         alert((data && data.error) || 'Could not update this section. Please try again.');
@@ -1036,7 +1050,7 @@
       const box = document.getElementById('fsSections');
       if (!box) return;
       const group = fullscreenSessionKey ? sessionGroupsByKey.get(fullscreenSessionKey) : null;
-      const items = group ? group.items : allTasksCache.filter(t => Number(t.id) === fullscreenTaskId).slice(0, 1);
+      const items = group ? group.items : [fullscreenCard()].filter(Boolean);
       if (fullscreenTaskId == null || items.length === 0) {
         box.innerHTML = '';
         return;
@@ -1046,7 +1060,7 @@
         <div class="rounded-xl border border-slate-200 divide-y divide-slate-100">
           ${items.map(t => `
             <div class="flex items-start gap-2.5 px-3 py-2">
-              <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked)" title="Mark this section complete">
+              <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked, ${t.schedule_id ?? 'null'})" title="Mark this session complete">
               <button type="button" onclick="showFullscreenPage(${t.material_id || 'null'}, ${t.session_start_page ?? t.start_page ?? 'null'})" title="${t.material_id ? 'Open the PDF at this section' : ''}" class="min-w-0 text-left ${t.material_id ? 'hover:text-blue-600' : 'cursor-default'}">
                 <span class="block text-xs font-semibold ${isItemDone(t) ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
                 <span class="block text-[11px] text-slate-400 font-medium">${sectionDetail(t)}</span>
@@ -1202,7 +1216,7 @@
                 <button type="button" onclick="openEditTaskModal(${task.id})" title="Edit task" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                   ✏️ Edit
                 </button>
-                <button type="button" onclick="openFullscreen(${task.id})" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
+                <button type="button" onclick="openFullscreen(${task.id}, null, '${cardKey}')" title="Full screen study view" class="btn btn-secondary btn-sm whitespace-nowrap flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
                   Full Screen
                 </button>
@@ -1290,7 +1304,7 @@
               ${items.map(t => `
                 <div class="flex items-center justify-between gap-3 px-3 py-2">
                   <label class="flex items-start gap-2.5 min-w-0 cursor-pointer">
-                    <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked)" title="Mark this section complete">
+                    <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer" ${isItemDone(t) ? 'checked' : ''} onchange="toggleSectionComplete(${t.id}, this.checked, ${t.schedule_id ?? 'null'})" title="Mark this session complete">
                     <span class="min-w-0">
                       <span class="block text-xs font-semibold ${isItemDone(t) ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
                       <span class="block text-[11px] text-slate-400 font-medium">${sectionDetail(t)}</span>

@@ -2,6 +2,7 @@ const express = require('express');
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../lib/db');
 const { receivePdf, saveMaterialFile, deleteMaterialFile } = require('../lib/materialFiles');
+const { refreshTaskStatusFromSessions } = require('../lib/taskStatus');
 
 const router = express.Router();
 
@@ -458,9 +459,11 @@ router.put('/:id', async (req, res) => {
 // PATCH /api/tasks/:id/complete
 // Tick/untick a section as done straight from the Tasks page (the
 // checkboxes on a session card and in full screen), without running a
-// timer. Ticking completes the task and every scheduled session of it;
-// unticking reopens them - back to In Progress if any study time was
-// logged against it, otherwise Not Started.
+// timer. With schedule_id, only that one scheduled session is ticked or
+// unticked, and the task is Completed once all of its sessions are.
+// Without one (a task that isn't scheduled), the whole task is ticked;
+// unticking goes back to In Progress if any study time was logged
+// against it, otherwise Not Started.
 // ==========================================
 router.patch('/:id/complete', async (req, res) => {
     try {
@@ -483,6 +486,19 @@ router.patch('/:id/complete', async (req, res) => {
         }
 
         const completed = Boolean(req.body && req.body.completed);
+        const scheduleId = Number(req.body && req.body.schedule_id);
+
+        if (scheduleId) {
+            const updated = await db.prepare(`
+                UPDATE schedules SET completed = ? WHERE id = ? AND task_id = ?
+            `).run(completed ? 1 : 0, scheduleId, taskId);
+            if (!updated.changes) {
+                return res.status(404).json({ success: false, error: 'That session no longer exists. Please reload.' });
+            }
+            const sessionStatus = await refreshTaskStatusFromSessions(taskId);
+            return res.json({ success: true, task: { id: taskId, status: sessionStatus } });
+        }
+
         let status = 'Completed';
         if (!completed) {
             const logged = await db.prepare(`SELECT COUNT(*) AS n FROM study_sessions WHERE task_id = ?`).get(taskId);

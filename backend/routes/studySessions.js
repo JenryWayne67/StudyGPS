@@ -4,6 +4,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { requireAuth } = require('../middleware/requireAuth');
 const { db } = require('../lib/db');
+const { refreshTaskStatusFromSessions } = require('../lib/taskStatus');
 
 const router = express.Router();
 
@@ -153,19 +154,23 @@ router.post('/', async (req, res) => {
                     // moves the task forward - reflect it on the task itself
                     // so tasks.html/dashboard.html show real status, not just
                     // a logged session.
-                    await db.prepare(`
-                        UPDATE tasks
-                        SET status = ?
-                        WHERE id = ? AND status != 'Completed'
-                    `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
-
-                    // Mark the scheduled session this was studied in as done,
-                    // so it shows finished on Tasks even when the section
-                    // continues in a later session (task still In Progress).
+                    // Studied in a scheduled session: mark just that session
+                    // done; the task is Completed only once every one of its
+                    // sessions is (finishing one used to tick all the others).
+                    let sessionStatus = null;
                     if (schedule_id) {
                         await db.prepare(`
                             UPDATE schedules SET completed = 1 WHERE id = ? AND task_id = ?
                         `).run(Number(schedule_id), cppTaskId);
+                        sessionStatus = await refreshTaskStatusFromSessions(cppTaskId);
+                    }
+
+                    if (sessionStatus === null) {
+                        await db.prepare(`
+                            UPDATE tasks
+                            SET status = ?
+                            WHERE id = ? AND status != 'Completed'
+                        `).run(cppCompleted ? 'Completed' : 'In Progress', cppTaskId);
                     }
 
                     const newSession = await db.prepare(`
